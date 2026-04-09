@@ -1,0 +1,131 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Orbitron", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-bg: #050505;
+  --color-card: #0a0a0a;
+  --color-card-hover: #111111;
+  --color-primary: #00f3ff; /* Cyber Cyan */
+  --color-accent: #ff00ff;  /* Neon Pink */
+  --color-warning: #f3ff00; /* Toxic Yellow */
+  --color-text-pri: #ffffff;
+  --color-text-sec: #bbbbbb;
+  --color-text-mut: #666666;
+  --color-success: #00ff41; /* Matrix Green */
+  --color-error: #ff003c;   /* Blood Red */
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-text-pri font-sans overflow-x-hidden leading-relaxed;
+    font-size: 15px;
+    background-image: 
+      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+      linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 2px, 3px 100%;
+  }
+}
+
+@layer utilities {
+  .neon-border {
+    box-shadow: 0 0 3px var(--color-primary);
+    border: 1px solid var(--color-primary);
+  }
+  
+  .neon-text {
+    text-shadow: 0 0 3px var(--color-primary);
+  }
+
+  .neon-text-accent {
+    text-shadow: 0 0 3px var(--color-accent);
+  }
+
+  .cyber-grid {
+    background-size: 60px 60px;
+    background-image: 
+      linear-gradient(to right, rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
+  }
+
+  .hex-grid {
+    background-image: url("data:image/svg+xml,%3Csvg width='24' height='42' viewBox='0 0 24 42' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 0l12 6.928v13.856L12 27.712 0 20.784V6.928L12 0zm0 27.712l12 6.928v13.856l-12 6.928-12-6.928V34.64l12-6.928z' fill='%2300f3ff' fill-opacity='0.03' fill-rule='evenodd'/%3E%3C/svg%3E");
+  }
+
+  .circuit-bg {
+    background-color: #050505;
+    background-image: radial-gradient(var(--color-primary) 0.5px, transparent 0.5px);
+    background-size: 20px 20px;
+    opacity: 0.03;
+  }
+
+  .scan-line {
+    width: 100%;
+    height: 2px;
+    background: var(--color-primary);
+    box-shadow: 0 0 15px var(--color-primary);
+    position: absolute;
+    z-index: 10;
+    animation: scan 3s linear infinite;
+  }
+
+  @keyframes scan {
+    0% { top: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .float-accent {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(5deg); }
+  }
+
+  .glitch-text {
+    position: relative;
+    animation: glitch-anim 4s infinite linear alternate-reverse;
+  }
+
+  @keyframes glitch-anim {
+    0% { clip-path: inset(40% 0 61% 0); }
+    20% { clip-path: inset(92% 0 1% 0); }
+    40% { clip-path: inset(43% 0 1% 0); }
+    60% { clip-path: inset(25% 0 58% 0); }
+    80% { clip-path: inset(54% 0 7% 0); }
+    100% { clip-path: inset(58% 0 43% 0); }
+  }
+
+  .glitch-hover:hover {
+    animation: glitch 0.3s cubic-bezier(.25, .46, .45, .94) both infinite;
+  }
+
+  @keyframes glitch {
+    0% { transform: translate(0); }
+    20% { transform: translate(-2px, 2px); }
+    40% { transform: translate(-2px, -2px); }
+    60% { transform: translate(2px, 2px); }
+    80% { transform: translate(2px, -2px); }
+    100% { transform: translate(0); }
+  }
+
+  .hud-bracket-tl {
+    @apply absolute top-0 left-0 h-4 w-4 border-t-2 border-l-2 border-primary;
+  }
+  .hud-bracket-tr {
+    @apply absolute top-0 right-0 h-4 w-4 border-t-2 border-r-2 border-primary;
+  }
+  .hud-bracket-bl {
+    @apply absolute bottom-0 left-0 h-4 w-4 border-b-2 border-l-2 border-primary;
+  }
+  .hud-bracket-br {
+    @apply absolute bottom-0 right-0 h-4 w-4 border-b-2 border-r-2 border-primary;
+  }
+}
+

@@ -1,0 +1,132 @@
+import { MSFT_INDUSTRY_MAP, MSFT_KEYWORDS, TITLE_VARIATIONS, DEFAULT_TITLE_POOL, TITLE_BANK } from "../constants";
+import { toTitleCase } from "./normalization";
+
+export function mapIndustry(raw: any) {
+  if (!raw) return "";
+  const cleaned = String(raw).trim();
+  const n = cleaned.toLowerCase().replace(/[^a-z0-9\s&]/g, " ").replace(/\s+/g, " ").trim();
+  if (MSFT_INDUSTRY_MAP[n]) return MSFT_INDUSTRY_MAP[n];
+  let best: string | null = null, bestLen = 0;
+  for (const [k, v] of Object.entries(MSFT_INDUSTRY_MAP)) {
+    if (n.includes(k) && k.length > bestLen) {
+      best = v;
+      bestLen = k.length;
+    }
+  }
+  if (best) return best;
+  for (const [kw, v] of MSFT_KEYWORDS) {
+    if (n.includes(kw)) return v;
+  }
+  return toTitleCase(cleaned);
+}
+
+export function mapEmployeeSize(raw: any) {
+  if (!raw) return "";
+  const s = String(raw).trim();
+  if (/\d.*[-–].*\d|10,000\+/.test(s)) return s;
+  const n = parseInt(s.replace(/[^0-9]/g, ""), 10);
+  if (isNaN(n)) return s;
+  if (n <= 4) return "2-4"; if (n <= 9) return "5-9"; if (n <= 24) return "10-24";
+  if (n <= 49) return "25-49"; if (n <= 99) return "50-99"; if (n <= 249) return "100-249";
+  if (n <= 999) return "250-999"; if (n <= 9999) return "1,000-9,999";
+  return "10,000+";
+}
+
+export function mapFnToKey(fn: string) {
+  const f = (fn || "").toLowerCase();
+  if (/\bit\b|information tech|technology|software|cyber|digital|infrastructure/.test(f)) return "Information Technology";
+  if (/sales|revenue|account|business dev/.test(f)) return "Sales";
+  if (/finance|financial|accounting|treasury|fiscal/.test(f)) return "Finance";
+  if (/marketing|brand|demand|growth|campaign|content/.test(f)) return "Marketing";
+  if (/operat|supply chain|logistics|production|process/.test(f)) return "Operations";
+  if (/security|cyber|risk|ciso/.test(f)) return "Security";
+  if (/hr\b|human resource|people|talent|workforce/.test(f)) return "Human Resources";
+  if (/engineer|develop|software|platform|r&d/.test(f)) return "Engineering";
+  if (/general|management|executive|strategy/.test(f)) return "General Management";
+  return null;
+}
+
+const _titleCursors: Record<string, number> = {};
+
+export function generateTitle(fn: string, level: string) {
+  const fnKey = mapFnToKey(fn) || "General Management";
+  const lvl = level || "Director";
+  const pool = (TITLE_VARIATIONS[fnKey]?.[lvl]) || DEFAULT_TITLE_POOL[lvl] || DEFAULT_TITLE_POOL["Director"];
+  const key = `${fnKey}:${lvl}`;
+  if (!_titleCursors[key]) _titleCursors[key] = Math.floor(Math.random() * pool.length);
+  const title = pool[_titleCursors[key] % pool.length];
+  _titleCursors[key]++;
+  return title;
+}
+
+export function parseSpecJobTitles(rawText: string) {
+  if (!rawText || typeof rawText !== "string") return [];
+  const results: any[] = [];
+  function inferLevel(text: string) {
+    const t = text.toLowerCase();
+    if (/c.level|cxo|c\s*suite/.test(t)) return "CXO";
+    if (/\bvp\b|vice.?president/.test(t)) return "VP";
+    if (/director\+|director and above/.test(t)) return "Director";
+    if (/\bdirector\b/.test(t)) return "Director";
+    if (/\bmanager\b/.test(t)) return "Manager";
+    if (/\bowner\b/.test(t)) return "Owner";
+    if (/\bpartner\b/.test(t)) return "Partner";
+    if (/\bsenior\b/.test(t)) return "Senior";
+    return "Director";
+  }
+  const lines = rawText.split(/\n|\r\n|\r|;/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (/^(primary|secondary|tertiary)\s*(audience)?[:\-]/i.test(line)) continue;
+    if (/^note\b/i.test(line)) continue;
+    if (line.length < 3) continue;
+    const sepMatch = line.match(/^(.+?)[\s]*[-–—:]+[\s]*(director\+?|vp\+?|svp|manager|c.level|cxo|owner|partner|senior)$/i);
+    if (sepMatch) {
+      const fn = sepMatch[1].replace(/[-–—:]+$/, "").trim();
+      const level = inferLevel(sepMatch[2].trim());
+      const fnKey = mapFnToKey(fn) || fn;
+      results.push({ title: generateTitle(fnKey, level), level, fn: fnKey });
+      continue;
+    }
+    const level = inferLevel(line);
+    const fn = line.replace(/\b(director\+?|vp\+?|svp|manager|c.level|cxo|owner|partner|executive|senior)\b/gi, "").trim() || line;
+    const fnKey = mapFnToKey(fn) || fn;
+    results.push({ title: generateTitle(fnKey, level), level, fn: fnKey });
+  }
+  return results.filter(r => r.title && r.title.length > 2);
+}
+
+const LEVEL_DIST_PCT: Record<string, number> = { "CXO": 5, "VP": 10, "Director": 15, "Manager": 30, "Owner": 5, "Partner": 5, "Senior": 20, "Individual Contributor": 10 };
+
+export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number) {
+  Object.keys(_titleCursors).forEach(k => delete _titleCursors[k]);
+  let pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
+  if (allowedLevels?.length) {
+    const s = new Set(allowedLevels.map(l => l.toLowerCase()));
+    const f = pool.filter(t => s.has((t.level || "").toLowerCase()));
+    if (f.length) pool = f;
+  }
+  if (allowedFunctions?.length) {
+    const s = new Set(allowedFunctions.map(f => f.toLowerCase()));
+    const f = pool.filter(t => s.has((t.fn || "").toLowerCase()));
+    if (f.length) pool = f;
+  }
+  const byLevel: Record<string, any[]> = {};
+  for (const t of pool) { const l = t.level || "Director"; if (!byLevel[l]) byLevel[l] = []; byLevel[l].push(t); }
+  const presentLevels = Object.keys(byLevel);
+  const totalWeight = presentLevels.reduce((s, l) => s + (LEVEL_DIST_PCT[l] || 10), 0);
+  const slots: any[] = []; let assigned = 0;
+  for (let i = 0; i < presentLevels.length; i++) {
+    const lvl = presentLevels[i];
+    const isLast = i === presentLevels.length - 1;
+    const count = isLast ? totalCount - assigned : Math.round(((LEVEL_DIST_PCT[lvl] || 10) / totalWeight) * totalCount);
+    assigned += count;
+    const candidates = byLevel[lvl];
+    for (let j = 0; j < count; j++) {
+      const base = candidates[j % candidates.length];
+      slots.push({ title: generateTitle(base.fn, base.level), level: base.level, fn: base.fn });
+    }
+  }
+  for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+  let idx = 0;
+  return () => { const t = slots[idx % slots.length]; idx++; return t; };
+}
