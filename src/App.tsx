@@ -286,17 +286,6 @@ export default function App() {
     }
 
     XLSX.utils.book_append_sheet(wb, ws1, "Cleaned_Data");
-    
-    // Add Header_Template sheet
-    let ws2;
-    try {
-      const hn = specWb.SheetNames.find(n => /header/i.test(n)) || specWb.SheetNames[1];
-      ws2 = specWb.Sheets[hn];
-      if (!ws2) throw new Error();
-    } catch {
-      ws2 = XLSX.utils.aoa_to_sheet([STRICT_HEADERS]);
-    }
-    XLSX.utils.book_append_sheet(wb, ws2, "Header_Template");
 
     const out = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
     const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
