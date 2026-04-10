@@ -169,5 +169,9 @@ export const TITLE_BANK = [
 export const STRICT_HEADERS = [
   "firstName", "lastName", "email", "telephone", "company_name",
   "job_title", "industry", "company_size", "job_level", "job_function",
-  "address", "address2", "city", "state", "postal_code", "country"
+  "email_optin", "asset_downloaded", "address", "address2", "city",
+  "state", "postal_code", "country", "lead_download_date",
+  "custom_question_1", "custom_question_2", "custom_question_3",
+  "custom_question_4", "custom_question_5", "custom_question_6",
+  "custom_question_7", "linkedinprofileurl"
 ];

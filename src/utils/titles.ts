@@ -100,33 +100,97 @@ const LEVEL_DIST_PCT: Record<string, number> = { "CXO": 5, "VP": 10, "Director":
 export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number) {
   Object.keys(_titleCursors).forEach(k => delete _titleCursors[k]);
   let pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
-  if (allowedLevels?.length) {
-    const s = new Set(allowedLevels.map(l => l.toLowerCase()));
-    const f = pool.filter(t => s.has((t.level || "").toLowerCase()));
-    if (f.length) pool = f;
-  }
+  
   if (allowedFunctions?.length) {
     const s = new Set(allowedFunctions.map(f => f.toLowerCase()));
     const f = pool.filter(t => s.has((t.fn || "").toLowerCase()));
     if (f.length) pool = f;
   }
-  const byLevel: Record<string, any[]> = {};
-  for (const t of pool) { const l = t.level || "Director"; if (!byLevel[l]) byLevel[l] = []; byLevel[l].push(t); }
-  const presentLevels = Object.keys(byLevel);
-  const totalWeight = presentLevels.reduce((s, l) => s + (LEVEL_DIST_PCT[l] || 10), 0);
-  const slots: any[] = []; let assigned = 0;
+
+  // Determine the level indicator from allowedLevels
+  let levelIndicator = "Manager+";
+  if (allowedLevels?.length) {
+    const levelsStr = allowedLevels.map(l => l.toLowerCase()).join(" ");
+    if (levelsStr.includes("manager+") || (levelsStr.includes("manager") && levelsStr.includes("director") && levelsStr.includes("vp") && levelsStr.includes("c-level"))) {
+      levelIndicator = "Manager+";
+    } else if (levelsStr.includes("director+") || (levelsStr.includes("director") && levelsStr.includes("vp") && levelsStr.includes("c-level"))) {
+      levelIndicator = "Director+";
+    } else if (levelsStr.includes("vp+") || (levelsStr.includes("vp") && levelsStr.includes("c-level"))) {
+      levelIndicator = "VP+";
+    } else if (levelsStr.includes("c-level") || levelsStr.includes("cxo")) {
+      levelIndicator = "C-Level";
+    } else if (levelsStr.includes("director/vp") || (levelsStr.includes("director") && levelsStr.includes("vp"))) {
+      levelIndicator = "Director/VP";
+    } else if (levelsStr.includes("director")) {
+      levelIndicator = "Director+";
+    } else if (levelsStr.includes("manager")) {
+      levelIndicator = "Manager+";
+    }
+  }
+
+  // Map CSV levels to standard levels
+  const standardizeLevel = (csvLevel: string) => {
+    const l = csvLevel.toLowerCase();
+    if (l.includes("chief") || l.includes("cxo")) return "CXO";
+    if (l.includes("vp") || l.includes("svp") || l.includes("avp") || l.includes("evp")) return "VP";
+    if (l.includes("director") || l.includes("head")) return "Director";
+    if (l.includes("manager")) return "Manager";
+    return "Manager";
+  };
+
+  const byLevel: Record<string, any[]> = { "Manager": [], "Director": [], "VP": [], "CXO": [] };
+  for (const t of pool) {
+    const stdLevel = standardizeLevel(t.level || "");
+    if (byLevel[stdLevel]) byLevel[stdLevel].push(t);
+  }
+
+  // Fallback if a level is empty
+  if (byLevel["Manager"].length === 0) byLevel["Manager"] = pool;
+  if (byLevel["Director"].length === 0) byLevel["Director"] = pool;
+  if (byLevel["VP"].length === 0) byLevel["VP"] = pool;
+  if (byLevel["CXO"].length === 0) byLevel["CXO"] = pool;
+
+  let dist: Record<string, number> = {};
+  if (levelIndicator === "Manager+") {
+    dist = { "Manager": 50, "Director": 30, "VP": 15, "CXO": 5 };
+  } else if (levelIndicator === "Director+") {
+    dist = { "Director": 60, "VP": 30, "CXO": 10 };
+  } else if (levelIndicator === "VP+") {
+    dist = { "VP": 70, "CXO": 30 };
+  } else if (levelIndicator === "C-Level") {
+    dist = { "CXO": 100 };
+  } else if (levelIndicator === "Director/VP") {
+    dist = { "Director": 70, "VP": 30 };
+  } else {
+    dist = { "Manager": 50, "Director": 30, "VP": 15, "CXO": 5 };
+  }
+
+  const presentLevels = Object.keys(dist);
+  const totalWeight = presentLevels.reduce((s, l) => s + dist[l], 0);
+  const slots: any[] = []; 
+  let assigned = 0;
+  
   for (let i = 0; i < presentLevels.length; i++) {
     const lvl = presentLevels[i];
     const isLast = i === presentLevels.length - 1;
-    const count = isLast ? totalCount - assigned : Math.round(((LEVEL_DIST_PCT[lvl] || 10) / totalWeight) * totalCount);
+    const count = isLast ? totalCount - assigned : Math.round((dist[lvl] / totalWeight) * totalCount);
     assigned += count;
     const candidates = byLevel[lvl];
     for (let j = 0; j < count; j++) {
       const base = candidates[j % candidates.length];
-      slots.push({ title: generateTitle(base.fn, base.level), level: base.level, fn: base.fn });
+      slots.push({ title: base.title, level: lvl, fn: base.fn });
     }
   }
-  for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+  
+  for (let i = slots.length - 1; i > 0; i--) { 
+    const j = Math.floor(Math.random() * (i + 1)); 
+    [slots[i], slots[j]] = [slots[j], slots[i]]; 
+  }
+  
   let idx = 0;
-  return () => { const t = slots[idx % slots.length]; idx++; return t; };
+  return () => { 
+    const t = slots[idx % slots.length]; 
+    idx++; 
+    return t || { title: "Manager", level: "Manager", fn: "General" }; 
+  };
 }
