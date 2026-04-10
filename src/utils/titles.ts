@@ -1,4 +1,4 @@
-import { MSFT_INDUSTRY_MAP, MSFT_KEYWORDS, TITLE_BANK } from "../constants";
+import { MSFT_INDUSTRY_MAP, MSFT_KEYWORDS, TITLE_VARIATIONS, DEFAULT_TITLE_POOL, TITLE_BANK } from "../constants";
 import { toTitleCase } from "./normalization";
 
 export function mapIndustry(raw: any) {
@@ -32,137 +32,101 @@ export function mapEmployeeSize(raw: any) {
   return "10,000+";
 }
 
-export function mapJobLevel(level: string): string {
-  const l = level.toLowerCase();
-  if (/chief|cxo|ceo|cto|cfo|coo|cmo|cro|ciso/i.test(l)) return "CXO";
-  if (/vp|svp|avp|evp|vice president/i.test(l)) return "VP";
-  if (/director|head|lead|principal/i.test(l)) return "Director";
-  if (/senior manager|sr\. manager|manager/i.test(l)) return "Manager";
-  return "Manager"; // Default
+export function mapFnToKey(fn: string) {
+  const f = (fn || "").toLowerCase();
+  if (/\bit\b|information tech|technology|software|cyber|digital|infrastructure/.test(f)) return "Information Technology";
+  if (/sales|revenue|account|business dev/.test(f)) return "Sales";
+  if (/finance|financial|accounting|treasury|fiscal/.test(f)) return "Finance";
+  if (/marketing|brand|demand|growth|campaign|content/.test(f)) return "Marketing";
+  if (/operat|supply chain|logistics|production|process/.test(f)) return "Operations";
+  if (/security|cyber|risk|ciso/.test(f)) return "Security";
+  if (/hr\b|human resource|people|talent|workforce/.test(f)) return "Human Resources";
+  if (/engineer|develop|software|platform|r&d/.test(f)) return "Engineering";
+  if (/general|management|executive|strategy/.test(f)) return "General Management";
+  return null;
 }
 
-export function parseSpecJobTitles(rows: any[]) {
-  // rows are from MSFT_titles_expanded_v2.csv
-  // Columns: Function, Level, Title
-  return rows.map(r => ({
-    fn: String(r["Function"] || "").trim(),
-    level: String(r["Level"] || "").trim(),
-    title: String(r["Title"] || "").trim()
-  })).filter(t => t.title);
+const _titleCursors: Record<string, number> = {};
+
+export function generateTitle(fn: string, level: string) {
+  const fnKey = mapFnToKey(fn) || "General Management";
+  const lvl = level || "Director";
+  const pool = (TITLE_VARIATIONS[fnKey]?.[lvl]) || DEFAULT_TITLE_POOL[lvl] || DEFAULT_TITLE_POOL["Director"];
+  const key = `${fnKey}:${lvl}`;
+  if (!_titleCursors[key]) _titleCursors[key] = Math.floor(Math.random() * pool.length);
+  const title = pool[_titleCursors[key] % pool.length];
+  _titleCursors[key]++;
+  return title;
 }
+
+export function parseSpecJobTitles(rawText: string) {
+  if (!rawText || typeof rawText !== "string") return [];
+  const results: any[] = [];
+  function inferLevel(text: string) {
+    const t = text.toLowerCase();
+    if (/c.level|cxo|c\s*suite/.test(t)) return "CXO";
+    if (/\bvp\b|vice.?president/.test(t)) return "VP";
+    if (/director\+|director and above/.test(t)) return "Director";
+    if (/\bdirector\b/.test(t)) return "Director";
+    if (/\bmanager\b/.test(t)) return "Manager";
+    if (/\bowner\b/.test(t)) return "Owner";
+    if (/\bpartner\b/.test(t)) return "Partner";
+    if (/\bsenior\b/.test(t)) return "Senior";
+    return "Director";
+  }
+  const lines = rawText.split(/\n|\r\n|\r|;/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (/^(primary|secondary|tertiary)\s*(audience)?[:\-]/i.test(line)) continue;
+    if (/^note\b/i.test(line)) continue;
+    if (line.length < 3) continue;
+    const sepMatch = line.match(/^(.+?)[\s]*[-–—:]+[\s]*(director\+?|vp\+?|svp|manager|c.level|cxo|owner|partner|senior)$/i);
+    if (sepMatch) {
+      const fn = sepMatch[1].replace(/[-–—:]+$/, "").trim();
+      const level = inferLevel(sepMatch[2].trim());
+      const fnKey = mapFnToKey(fn) || fn;
+      results.push({ title: generateTitle(fnKey, level), level, fn: fnKey });
+      continue;
+    }
+    const level = inferLevel(line);
+    const fn = line.replace(/\b(director\+?|vp\+?|svp|manager|c.level|cxo|owner|partner|executive|senior)\b/gi, "").trim() || line;
+    const fnKey = mapFnToKey(fn) || fn;
+    results.push({ title: generateTitle(fnKey, level), level, fn: fnKey });
+  }
+  return results.filter(r => r.title && r.title.length > 2);
+}
+
+const LEVEL_DIST_PCT: Record<string, number> = { "CXO": 5, "VP": 10, "Director": 15, "Manager": 30, "Owner": 5, "Partner": 5, "Senior": 20, "Individual Contributor": 10 };
 
 export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number) {
-  // Rule 1: Level mapping with weighted distribution matching CSV levels exactly
-  const getMatchingLevels = (indicator: string) => {
-    const ind = indicator.toLowerCase();
-    const rand = Math.random();
-
-    // CSV Levels: "Director / Head", "Manager", "Senior Manager", "AVP / VP / SVP", "Chief"
-    if (ind.includes("director")) { // Catch "Director" and "Director+"
-      // Scale: Director (70%), VP (20%), CXO (10%)
-      if (rand < 0.70) return ["Director / Head"];
-      if (rand < 0.90) return ["AVP / VP / SVP"];
-      return ["Chief"];
-    }
-    if (ind.includes("vp")) { // Catch "VP" and "VP+"
-      if (rand < 0.80) return ["AVP / VP / SVP"];
-      return ["Chief"];
-    }
-    if (ind.includes("c-level") || ind.includes("chief")) return ["Chief"];
-    if (ind.includes("manager")) { // Catch "Manager" and "Manager+"
-      // Target: Managers (~50%) > Directors (~35%) > VPs (~10%) > C-Level (~5%)
-      if (rand < 0.35) return ["Manager"];
-      if (rand < 0.50) return ["Senior Manager"];
-      if (rand < 0.85) return ["Director / Head"];
-      if (rand < 0.95) return ["AVP / VP / SVP"];
-      return ["Chief"];
-    }
-    
-    return [indicator];
-  };
-
-  let pool = specTitles.length > 0 ? [...specTitles] : [...TITLE_BANK];
-  
-  // STRICT FUNCTION FILTERING: If spec sheet defines functions, remove all other functions from the pool!
-  if (allowedFunctions && allowedFunctions.length > 0) {
-    // Exact or partial match for allowed functions
-    const fnRegex = new RegExp(allowedFunctions.join("|"), "i");
-    const filtered = pool.filter(t => fnRegex.test(t.fn) || fnRegex.test(t.title));
-    if (filtered.length > 0) {
-      pool = filtered;
+  Object.keys(_titleCursors).forEach(k => delete _titleCursors[k]);
+  let pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
+  if (allowedLevels?.length) {
+    const s = new Set(allowedLevels.map(l => l.toLowerCase()));
+    const f = pool.filter(t => s.has((t.level || "").toLowerCase()));
+    if (f.length) pool = f;
+  }
+  if (allowedFunctions?.length) {
+    const s = new Set(allowedFunctions.map(f => f.toLowerCase()));
+    const f = pool.filter(t => s.has((t.fn || "").toLowerCase()));
+    if (f.length) pool = f;
+  }
+  const byLevel: Record<string, any[]> = {};
+  for (const t of pool) { const l = t.level || "Director"; if (!byLevel[l]) byLevel[l] = []; byLevel[l].push(t); }
+  const presentLevels = Object.keys(byLevel);
+  const totalWeight = presentLevels.reduce((s, l) => s + (LEVEL_DIST_PCT[l] || 10), 0);
+  const slots: any[] = []; let assigned = 0;
+  for (let i = 0; i < presentLevels.length; i++) {
+    const lvl = presentLevels[i];
+    const isLast = i === presentLevels.length - 1;
+    const count = isLast ? totalCount - assigned : Math.round(((LEVEL_DIST_PCT[lvl] || 10) / totalWeight) * totalCount);
+    assigned += count;
+    const candidates = byLevel[lvl];
+    for (let j = 0; j < count; j++) {
+      const base = candidates[j % candidates.length];
+      slots.push({ title: generateTitle(base.fn, base.level), level: base.level, fn: base.fn });
     }
   }
-
-  // Shuffle the entire pool once at the start of the run
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  const groupedPool: Record<string, any[]> = {};
-  pool.forEach(t => {
-    const key = `${t.fn.toLowerCase()}|${t.level.toLowerCase()}`;
-    if (!groupedPool[key]) groupedPool[key] = [];
-    groupedPool[key].push(t);
-  });
-
-  Object.values(groupedPool).forEach(list => {
-    for (let i = list.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [list[i], list[j]] = [list[j], list[i]];
-    }
-  });
-
-  const usageIndices: Record<string, number> = {};
-
-  return (inputFn: string, inputLevelInd: string) => {
-    const targetLevels = getMatchingLevels(inputLevelInd);
-    
-    let candidates: any[] = [];
-    targetLevels.forEach(tl => {
-      const key = `${inputFn.toLowerCase()}|${tl.toLowerCase()}`;
-      if (groupedPool[key]) candidates.push(...groupedPool[key]);
-    });
-
-    // Fallback 1: STRICT FUNCTION MATCHING. Keep the requested function, ignore the level.
-    // This prevents "random finance sales titles" when IT is requested.
-    if (candidates.length === 0) {
-      Object.keys(groupedPool).forEach(k => {
-        if (k.startsWith(`${inputFn.toLowerCase()}|`)) candidates.push(...groupedPool[k]);
-      });
-    }
-
-    // Fallback 2: Keep the level, drop the function (last resort)
-    if (candidates.length === 0) {
-      targetLevels.forEach(tl => {
-        Object.keys(groupedPool).forEach(k => {
-          if (k.endsWith(`|${tl.toLowerCase()}`)) candidates.push(...groupedPool[k]);
-        });
-      });
-    }
-
-    if (candidates.length === 0) candidates = pool;
-
-    // Truly randomize the selection from candidates to ensure different results across runs
-    // while still trying to use all candidates before repeating
-    const poolKey = candidates.map(c => c.title).sort().join("|");
-    if (usageIndices[poolKey] === undefined) {
-      // Shuffle the candidates for this specific pool on first use in this run
-      for (let i = candidates.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-      }
-      usageIndices[poolKey] = 0;
-    }
-
-    const idx = usageIndices[poolKey];
-    const selected = candidates[idx % candidates.length];
-    usageIndices[poolKey] = idx + 1;
-    
-    return {
-      title: selected.title,
-      level: mapJobLevel(selected.level),
-      fn: selected.fn
-    };
-  };
+  for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+  let idx = 0;
+  return () => { const t = slots[idx % slots.length]; idx++; return t; };
 }

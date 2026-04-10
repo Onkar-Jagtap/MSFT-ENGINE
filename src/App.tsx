@@ -4,8 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { T, STRICT_HEADERS, TITLE_BANK } from "./constants";
 import { 
   stripSpecialChars, toTitleCase, cleanText, normalizeEmail, 
-  isValidEmail, cleanPhone, expandState, buildCompanyDedup, resolveNames,
-  normalizePostalCode
+  isValidEmail, cleanPhone, expandState, buildCompanyDedup, resolveNames 
 } from "./utils/normalization";
 import { 
   mapIndustry, mapEmployeeSize, parseSpecJobTitles, buildTitleAssigner 
@@ -52,7 +51,6 @@ export default function App() {
     const f = e.target.files?.[0];
     if (!f) return;
     if (isRaw) setRawFile(f); else setSpecFile(f);
-    e.target.value = ""; // Clear to allow re-upload of same file
   };
 
   const handleDrop = (e: React.DragEvent, isRaw: boolean) => {
@@ -81,15 +79,7 @@ export default function App() {
 
   const process = async () => {
     if (!rawFile || !specFile || phase === "running") return;
-    if (downloadUrl) {
-      URL.revokeObjectURL(downloadUrl);
-      setDownloadUrl(null);
-    }
     setPhase("running"); setLogs([]); setProgress(0); setStats(null);
-    const runId = Math.random().toString(36).substring(7).toUpperCase();
-    addLog("accent", `>> SESSION_START [${runId}]`);
-    addLog("accent", `>> CLEANING_WORKSPACE...`);
-    addLog("accent", `>> INPUT_FILES: ${rawFile.name} (${(rawFile.size/1024).toFixed(1)}KB) // ${specFile.name} (${(specFile.size/1024).toFixed(1)}KB)`);
     setDownloadUrl(null); setStepStates(Array(8).fill("idle")); setPreview([]);
 
     addLog("accent", ">> INITIATING_SECURITY_SCAN...");
@@ -105,131 +95,42 @@ export default function App() {
     addLog("success", "✓ PORTAL_STABLE");
     
     addLog("accent", "→ Reading files…");
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    
     const [rawWb, specWb] = await Promise.all([readExcel(rawFile), readExcel(specFile)]);
     const rawData: any[] = XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[0]], { defval: "" });
     addLog("success", `✓ Raw data: ${rawData.length} rows`);
 
-    // Extract CID for filename
-    let cidValue = "XXX";
-    try {
-      for (const sn of specWb.SheetNames) {
-        const s = specWb.Sheets[sn];
-        const data: any[][] = XLSX.utils.sheet_to_json(s, { header: 1, defval: "" });
-        for (let i = 0; i < data.length; i++) {
-          const row = data[i];
-          const cidIdx = row.findIndex(cell => /CID|Campaign\s*code/i.test(String(cell)));
-          if (cidIdx !== -1) {
-            // User explicitly said: "specs doc conatins CID its next row conatin numbers"
-            // So we check next row first, then same row next column
-            let val = "";
-            if (data[i+1]) val = String(data[i+1][cidIdx] || "").trim();
-            if (!val) val = String(row[cidIdx + 1] || "").trim();
-            
-            if (val) {
-              const match = val.match(/\d+/);
-              if (match) { cidValue = match[0]; break; }
-            }
-          }
-        }
-        if (cidValue !== "XXX") break;
-      }
-    } catch (e) { console.error("CID extraction error", e); }
-
-    let specTitles: any[] = [], allowedLevels: string[] | null = null, allowedFunctions: string[] | null = null, allowedAssets: string[] = [];
+    let specTitles: any[] = [], allowedLevels: string[] | null = null, allowedFunctions: string[] | null = null;
     
     try {
-      // Rule 1: Load MSFT_titles_expanded_v2.csv (assuming it's the spec file or a sheet in it)
-      // The user says "Load: MSFT_titles_expanded_v2.csv"
-      // If the spec file is an Excel, I'll look for a sheet with "titles" or just use the first one if it has Function/Level/Title
-      const titlesSheetName = specWb.SheetNames.find(n => /titles|expanded/i.test(n)) || specWb.SheetNames[0];
-      const titlesRows: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[titlesSheetName], { defval: "" });
-      specTitles = parseSpecJobTitles(titlesRows);
-      addLog("success", `✓ Loaded ${specTitles.length} titles from ${titlesSheetName}`);
-    } catch (e: any) { addLog("warn", "⚠ Title sheet error: " + e.message); }
-
-    try {
-      const hn = specWb.SheetNames.find(n => /header|spec/i.test(n)) || specWb.SheetNames[0];
-      const sheet = specWb.Sheets[hn];
-      const hrRaw: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-      
-      let specLvl = "";
-      let specFn = "";
-      
-      // Extract spec constraints (Key-Value pairs)
-      for (let i = 0; i < hrRaw.length; i++) {
-        const row = hrRaw[i];
-        if (!row || row.length === 0) continue;
-        const keyCell = String(row[0]).toLowerCase().trim();
-        const valCell = row.slice(1).map(c => String(c).trim()).filter(Boolean).join(", ");
-        
-        if (keyCell.includes("job title") || keyCell.includes("job level") || keyCell.includes("seniority")) {
-          if (valCell) specLvl = valCell;
-        }
-        if (keyCell.includes("job function") || keyCell.includes("department") || keyCell.includes("role") || keyCell.includes("functions")) {
-          if (valCell) specFn = valCell;
-        }
-      }
-
-      addLog("accent", `>> SPEC_CONSTRAINTS: Level=[${specLvl || "ANY"}] Function=[${specFn || "ANY"}]`);
-      
-      const assets = new Set<string>();
-      
-      // Find row where "email_optin" appears and determine asset column
-      let startRowIdx = 0;
-      let assetColIdx = 11; // Default to L
-      for (let i = 0; i < hrRaw.length; i++) {
-        const row = hrRaw[i];
-        const optinIdx = row.findIndex(cell => String(cell).toLowerCase().includes("email_optin"));
-        if (optinIdx !== -1) {
-          startRowIdx = i + 1;
-          const foundAssetCol = row.findIndex(cell => /asset|download/i.test(String(cell)));
-          if (foundAssetCol !== -1) assetColIdx = foundAssetCol;
+      const specsName = specWb.SheetNames.find(n => /spec/i.test(n)) || specWb.SheetNames[0];
+      const specsRows: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[specsName], { defval: "" });
+      for (const row of specsRows) {
+        const vals = Object.values(row);
+        const key = String(vals[0] || "").toLowerCase().trim();
+        const val = String(vals[1] || "").trim();
+        if ((key.includes("job title") || key.includes("jobtitle")) && val) {
+          specTitles = parseSpecJobTitles(val);
+          addLog("success", `✓ Spec titles: ${specTitles.length} entries`);
+          addLog("info", `  → ${specTitles.slice(0, 3).map(t => `${t.title} [${t.level}]`).join(" · ")}`);
           break;
         }
       }
+      if (!specTitles.length) addLog("warn", "⚠ No Job Titles in Spec — using title bank");
+    } catch (e: any) { addLog("warn", "⚠ Spec sheet error: " + e.message); }
 
-      if (startRowIdx > 0) {
-        for (let i = startRowIdx; i < hrRaw.length; i++) {
-          const row = hrRaw[i];
-          let assetStr = String(row[assetColIdx] || "").trim();
-          if (!assetStr && assetColIdx !== 11) assetStr = String(row[11] || "").trim();
-          
-          if (assetStr) {
-            const parts = assetStr.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
-            parts.forEach(p => {
-              const isPlaceholder = /^(nan|asset_download|asset\s*\d+-\d+|asset\s*\d+)$/i.test(p) || p.toLowerCase() === "asset 1-2";
-              if (!isPlaceholder && p.length > 2) {
-                assets.add(p);
-              }
-            });
-          }
-        }
-      }
-
-      allowedLevels = specLvl ? specLvl.split(/[,;/|]/).map(s => s.trim()).filter(Boolean) : null;
-      allowedFunctions = specFn ? specFn.split(/[,;/|]/).map(s => s.trim()).filter(Boolean) : null;
+    try {
+      const hn = specWb.SheetNames.find(n => /header/i.test(n)) || specWb.SheetNames[1];
+      const hr: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "" });
       
-      if (assets.size > 0) { 
-        const allAssets = [...assets];
-        // Fisher-Yates shuffle for better randomness
-        for (let i = allAssets.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [allAssets[i], allAssets[j]] = [allAssets[j], allAssets[i]];
-        }
-
-        if (allAssets.length <= 5) {
-          allowedAssets = allAssets;
-          addLog("success", `✓ asset_download: Using all ${allowedAssets.length} assets found after 'email_optin'`);
-        } else {
-          allowedAssets = allAssets.slice(0, 5);
-          addLog("success", `✓ asset_download: Selected 5 random assets from ${allAssets.length} found after 'email_optin'`);
-        }
-        addLog("accent", `→ Pool: ${allowedAssets.join(" // ")}`);
-      } else {
-        addLog("warn", "⚠ No assets found in Column L after 'email_optin' row");
+      const levels = new Set<string>(), functions = new Set<string>();
+      for (const row of hr) {
+        const lvl = String(row["job_level"] || "").trim();
+        if (lvl && !/^(nan|job_level)$/i.test(lvl)) levels.add(lvl);
+        const fn = String(row["job_function"] || "").trim();
+        if (fn && !/^(nan|job_function)$/i.test(fn)) functions.add(fn);
       }
+      if (levels.size > 0) { allowedLevels = [...levels]; addLog("success", `✓ job_level: ${allowedLevels.join(", ")}`); }
+      if (functions.size > 0) { allowedFunctions = [...functions]; addLog("success", `✓ job_function: ${allowedFunctions.slice(0, 5).join(", ")}${allowedFunctions.length > 5 ? "…" : ""}`); }
     } catch (e: any) { addLog("warn", "⚠ Header sheet error: " + e.message); }
 
     if (!specTitles.length) specTitles = TITLE_BANK;
@@ -250,13 +151,6 @@ export default function App() {
     const stateCol = keys.find(k => /state|province|region/i.test(k)) || "state";
     const postalCol = keys.find(k => /postal|zip|postcode/i.test(k)) || "postal_code";
     const countryCol = keys.find(k => /country|nation|location/i.test(k)) || "country";
-    const linkedinCol = keys.find(k => /linkedin|profile|url/i.test(k)) || "linkedinprofileurl";
-    const rawAssetCol = keys.find(k => /asset_downloaded|asset_downloade|asset/i.test(k)) || "";
-
-    // Rule 1: Input format: [Function] - [Level Indicator]
-    // I'll assume the raw data has a column that looks like this, or I'll use job_function/job_level if they exist
-    const rawFnCol = keys.find(k => /function|job_function/i.test(k)) || "";
-    const rawLvlCol = keys.find(k => /level|job_level/i.test(k)) || "";
 
     const resolveCompany = buildCompanyDedup(rawData, companyCol);
     let nameFixed = 0, phoneFixed = 0;
@@ -293,18 +187,9 @@ export default function App() {
 
     // STEP 3 — Title assignment
     setStep(4, "running"); setProgressMsg("Assigning AI titles…");
-    const assignTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length);
+    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length);
     rows = await processInChunks(rows, 500, r => {
-      // STRICT OVERRIDE: If spec sheet has functions/levels, use them. Otherwise fallback to raw data.
-      const inputFn = (allowedFunctions && allowedFunctions.length > 0) 
-        ? allowedFunctions[Math.floor(Math.random() * allowedFunctions.length)]
-        : String(r[rawFnCol] || "IT").trim();
-        
-      const inputLvl = (allowedLevels && allowedLevels.length > 0)
-        ? allowedLevels[Math.floor(Math.random() * allowedLevels.length)]
-        : String(r[rawLvlCol] || "Manager+").trim();
-
-      const t = assignTitle(inputFn, inputLvl);
+      const t = getNextTitle();
       return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
     });
     addLog("success", `✓ All ${rows.length} rows assigned titles`);
@@ -335,84 +220,6 @@ export default function App() {
     setStep(7, "running"); setProgressMsg("Building Excel…");
     addLog("accent", "→ Building workbook with yellow highlights…");
 
-    // Rule 5: lead_download_date
-    const getNYLeadDate = () => {
-      const now = new Date();
-      // Get current date in NY (YYYY-MM-DD)
-      const nyDateStr = new Intl.DateTimeFormat('en-CA', { 
-        timeZone: 'America/New_York', 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit' 
-      }).format(now);
-      
-      // Get current time in NY to prevent future times
-      const nyTimeStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
-      const nyTimeParts = nyTimeStr.split(', ')[1].split(':').map(Number);
-      const nyH = nyTimeParts[0];
-      const nyM = nyTimeParts[1];
-      const nyS = nyTimeParts[2];
-
-      const usedMinutes = new Set<string>();
-      const usedTimestamps = new Set<string>();
-
-      return (rowIdx: number) => {
-        let h, m, s, time, minKey;
-        let attempts = 0;
-        let isFuture = false;
-        let minuteRepeated = false;
-        
-        // Range: 09:30:00 to 11:30:00 (120 minutes)
-        const startTotalSec = 9 * 3600 + 30 * 60;
-        const endTotalSec = 11 * 3600 + 30 * 60;
-        const totalRangeSec = endTotalSec - startTotalSec;
-
-        do {
-          attempts++;
-          const randomSec = Math.floor(Math.random() * (totalRangeSec + 1));
-          const currentTotalSec = startTotalSec + randomSec;
-          
-          h = Math.floor(currentTotalSec / 3600);
-          m = Math.floor((currentTotalSec % 3600) / 60);
-          s = currentTotalSec % 60;
-          
-          const pad = (n: number) => String(n).padStart(2, '0');
-          time = `${pad(h)}:${pad(m)}:${pad(s)}`;
-          minKey = `${pad(h)}:${pad(m)}`;
-
-          // Constraints
-          isFuture = h > nyH || (h === nyH && m > nyM) || (h === nyH && m === nyM && s > nyS);
-          
-          // If we have more rows than minutes (120), we MUST repeat minutes.
-          // But we try to avoid it if possible.
-          minuteRepeated = usedMinutes.has(minKey) && usedMinutes.size < 120;
-
-          if (attempts > 2000) break; 
-        } while (usedTimestamps.has(time) || minuteRepeated || isFuture);
-
-        usedMinutes.add(minKey);
-        usedTimestamps.add(time);
-        // Format: YYYY-MM-DD HH:MM:SS (TEXT format)
-        return `${nyDateStr} ${time}`;
-      };
-    };
-    const generateLeadDate = getNYLeadDate();
-
-    // Rule 4: asset_downloaded distribution
-    const assetPool = allowedAssets.length > 0 ? allowedAssets : ["Asset 1", "Asset 2", "Asset 3"];
-    // Shuffle the pool for this specific run
-    for (let i = assetPool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [assetPool[i], assetPool[j]] = [assetPool[j], assetPool[i]];
-    }
-    
-    const assetOffset = Math.floor(Math.random() * assetPool.length);
-    const getAsset = (rowIdx: number) => {
-      if (assetPool.length === 0) return "Default Asset";
-      const selected = assetPool[(rowIdx + assetOffset) % assetPool.length];
-      return selected;
-    };
-
     const yellowCells: { rowIdx: number, col: string }[] = [];
     const finalRows = rows.map((r, idx) => {
       const country = toTitleCase(cleanText(r[countryCol] || ""));
@@ -423,7 +230,7 @@ export default function App() {
       const email = r._email;
       const telephone = r._phone || "";
       
-      let job_title = r._job_title || "";
+      let job_title = stripSpecialChars(r._job_title || "");
       if (!job_title) { job_title = "Business Professional"; yellowCells.push({ rowIdx: idx + 1, col: "job_title" }); }
       
       let industry = r._industry || mapIndustry(String(r[industryCol] || ""));
@@ -432,13 +239,10 @@ export default function App() {
       const company_size = r._company_size || mapEmployeeSize(String(r[sizeCol] || ""));
       if (!company_size) yellowCells.push({ rowIdx: idx + 1, col: "company_size" });
       
-      const job_level = r._job_level || "Director";
-      const job_function = r._job_function || "General";
-      
-      const rawAsset = rawAssetCol ? String(r[rawAssetCol] || "").trim() : "";
-      // Rule: Ignore placeholder assets like "asset 1-2" from raw input too
-      const isPlaceholder = /^(nan|asset_download|asset\s*\d+-\d+|asset\s*\d+)$/i.test(rawAsset) || rawAsset.toLowerCase() === "asset 1-2";
-      const asset_downloaded = (rawAsset && !isPlaceholder) ? rawAsset : getAsset(idx);
+      const job_level = r._job_level || (allowedLevels ? allowedLevels[0] : "Director");
+      const job_function = r._job_function || (allowedFunctions ? allowedFunctions[0] : "General");
+      if (!r._job_level) yellowCells.push({ rowIdx: idx + 1, col: "job_level" });
+      if (!r._job_function) yellowCells.push({ rowIdx: idx + 1, col: "job_function" });
       
       const city = toTitleCase(cleanText(r[cityCol] || ""));
       const isExceptionCountry = countryLower.includes("united states") || countryLower === "us" || countryLower === "usa" || countryLower.includes("canada") || countryLower.includes("india") || countryLower.includes("australia");
@@ -447,7 +251,7 @@ export default function App() {
       if (isExceptionCountry) { state = rawState ? expandState(rawState, country) : ""; }
       else { state = city || ""; if (!rawState && city) yellowCells.push({ rowIdx: idx + 1, col: "state" }); }
       
-      const postal_code = normalizePostalCode(r[postalCol], country);
+      const postal_code = String(r[postalCol] || "").trim();
       const address = stripSpecialChars(cleanText(r[addrCol] || ""));
       
       if (!firstName) yellowCells.push({ rowIdx: idx + 1, col: "firstName" });
@@ -456,38 +260,7 @@ export default function App() {
       if (!country) yellowCells.push({ rowIdx: idx + 1, col: "country" });
       if (!postal_code) yellowCells.push({ rowIdx: idx + 1, col: "postal_code" });
       
-      const clean = (val: any) => String(val || "").replace(/\s+/g, " ").trim();
-
-      // Rule 4 & 5 & 6
-      return { 
-        firstName: clean(firstName), 
-        lastName: clean(lastName), 
-        email: clean(email), 
-        telephone: clean(telephone), 
-        company_name: clean(company), 
-        job_title: clean(job_title), 
-        industry: clean(industry), 
-        company_size: clean(company_size), 
-        job_level: clean(job_level), 
-        job_function: clean(job_function), 
-        email_optin: 1, 
-        asset_downloaded: clean(asset_downloaded), 
-        address: clean(address), 
-        address2: "", 
-        city: clean(city), 
-        state: clean(state), 
-        postal_code: clean(postal_code), 
-        country: clean(country),
-        lead_download_date: generateLeadDate(idx),
-        custom_question_1: clean(r["custom_question_1"]),
-        custom_question_2: clean(r["custom_question_2"]),
-        custom_question_3: clean(r["custom_question_3"]),
-        custom_question_4: clean(r["custom_question_4"]),
-        custom_question_5: clean(r["custom_question_5"]),
-        custom_question_6: clean(r["custom_question_6"]),
-        custom_question_7: "",
-        linkedinprofileurl: clean(r[linkedinCol])
-      };
+      return { firstName, lastName, email, telephone, company_name: company, job_title, industry, company_size, job_level, job_function, address, address2: "", city, state, postal_code, country };
     });
 
     const wb = XLSX.utils.book_new();
@@ -495,15 +268,7 @@ export default function App() {
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
     
     // Set column widths
-    const COL_WIDTHS: Record<string, number> = { 
-      firstName: 14, lastName: 14, email: 30, telephone: 16, company_name: 24, 
-      job_title: 30, industry: 20, company_size: 14, job_level: 16, job_function: 22, 
-      email_optin: 12, asset_downloaded: 24, address: 26, address2: 12, city: 14, 
-      state: 18, postal_code: 14, country: 16, lead_download_date: 22,
-      custom_question_1: 20, custom_question_2: 20, custom_question_3: 20, 
-      custom_question_4: 20, custom_question_5: 20, custom_question_6: 20, 
-      custom_question_7: 20, linkedinprofileurl: 30
-    };
+    const COL_WIDTHS: Record<string, number> = { firstName: 14, lastName: 14, email: 30, telephone: 16, company_name: 24, job_title: 30, industry: 20, company_size: 14, job_level: 16, job_function: 22, address: 26, address2: 12, city: 14, state: 18, postal_code: 14, country: 16 };
     ws1["!cols"] = STRICT_HEADERS.map(h => ({ wch: COL_WIDTHS[h] || 14 }));
 
     // Apply yellow highlights
@@ -525,7 +290,7 @@ export default function App() {
     // Add Header_Template sheet
     let ws2;
     try {
-      const hn = specWb.SheetNames.find(n => /header|spec/i.test(n)) || specWb.SheetNames[0];
+      const hn = specWb.SheetNames.find(n => /header/i.test(n)) || specWb.SheetNames[1];
       ws2 = specWb.Sheets[hn];
       if (!ws2) throw new Error();
     } catch {
@@ -536,10 +301,9 @@ export default function App() {
     const out = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
     const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
-    const fname = `msft_Pja_${cidValue}.xlsx`;
+    const fname = `msft_pja_cleaned_${new Date().toISOString().slice(0, 10)}.xlsx`;
     
     setDownloadUrl(url); setDownloadName(fname);
-    addLog("success", `✓ File generated: ${fname}`);
     addLog("success", `✓ ${finalRows.length} rows × ${STRICT_HEADERS.length} cols`);
     addLog("accent", `→ ${yellowCells.length} yellow highlights applied`);
     setStep(7, "done"); setProgress(100);
@@ -552,21 +316,10 @@ export default function App() {
   };
 
   const reset = () => {
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setRawFile(null); setSpecFile(null); setPhase("idle"); setProgress(0);
     setStepStates(Array(8).fill("idle")); setLogs([]); setStats(null);
     setPreview([]); setDownloadUrl(null); setProgressMsg("");
   };
-
-  React.useEffect(() => {
-    if (rawFile || specFile) {
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-      setDownloadUrl(null);
-      setPhase("idle");
-      setStats(null);
-      setPreview([]);
-    }
-  }, [rawFile, specFile]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setIsBooting(false), 2500);
@@ -685,9 +438,6 @@ export default function App() {
                         a.href = downloadUrl;
                         a.download = downloadName;
                         a.click();
-                        // Reset portal for next run as requested
-                        addLog("warn", ">> SYSTEM_RESET_IN_PROGRESS...");
-                        setTimeout(reset, 3000);
                       }
                       setShowDownloadModal(false);
                     }}

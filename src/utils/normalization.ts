@@ -2,8 +2,7 @@ import { US_STATES, CANADA_PROVINCES, INDIA_STATES, AUSTRALIA_STATES } from "../
 
 export function stripSpecialChars(s: any) {
   if (!s) return "";
-  // Rule 3: address: Remove ".", "(", ")", "," and other special chars
-  return String(s).replace(/[.(),]/g, "").replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim();
+  return String(s).replace(/[",:']/g, "").replace(/\s+/g, " ").trim();
 }
 
 export function toTitleCase(s: any) {
@@ -13,7 +12,7 @@ export function toTitleCase(s: any) {
 
 export function cleanText(s: any) {
   if (!s && s !== 0) return "";
-  return String(s).replace(/\s+/g, " ").trim();
+  return String(s).trim().replace(/[^\w\s@.+\-,()\/&]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function normalizeEmail(raw: any) {
@@ -29,7 +28,6 @@ export function isValidEmail(email: any) {
 
 export function cleanPhone(phone: any, country: any) {
   if (!phone) return "";
-  // Rule 3: telephone: MUST be E.164 format Example: +14155552671
   const digits = String(phone).replace(/[^\d]/g, "");
   if (digits.length < 7) return "";
   const cc: Record<string, string> = {
@@ -39,82 +37,9 @@ export function cleanPhone(phone: any, country: any) {
   };
   const ctry = (country || "").toLowerCase();
   const code = cc[ctry];
-  
-  let result = digits;
-  if (code && !digits.startsWith(code)) {
-    result = `${code}${digits}`;
-  }
-  
-  return `+${result}`;
-}
-
-export function normalizePostalCode(pc: any, country: any) {
-  let cleaned = String(pc || "").trim().replace(/\s+/g, " ");
-  if (!cleaned) return "";
-  
-  const c = String(country || "").toLowerCase();
-  const digits = cleaned.replace(/[^\d]/g, "");
-  
-  // If it's not purely numeric, we don't pad (e.g. UK, Canada)
-  if (digits !== cleaned.replace(/\s/g, "")) {
-    return cleaned;
-  }
-
-  // Length mapping for common countries
-  const lengths: Record<string, number> = {
-    "united states": 5, "us": 5, "usa": 5,
-    "switzerland": 4, "ch": 4, "swiss": 4,
-    "australia": 4, "au": 4,
-    "india": 6, "in": 6,
-    "germany": 5, "de": 5,
-    "france": 5, "fr": 5,
-    "spain": 5, "es": 5,
-    "italy": 5, "it": 5,
-    "austria": 4, "at": 4,
-    "belgium": 4, "be": 4,
-    "denmark": 4, "dk": 4,
-    "norway": 4, "no": 4,
-    "sweden": 5, "se": 5,
-    "brazil": 8, "br": 8,
-    "japan": 7, "jp": 7,
-    "china": 6, "cn": 6,
-    "singapore": 6, "sg": 6,
-    "new zealand": 4, "nz": 4,
-    "mexico": 5, "mx": 5,
-    "south africa": 4, "za": 4,
-    "netherlands": 4, "nl": 4,
-    "finland": 5, "fi": 5,
-    "greece": 5, "gr": 5,
-    "israel": 7, "il": 7,
-    "malaysia": 5, "my": 5,
-    "philippines": 4, "ph": 4,
-    "thailand": 5, "th": 5,
-    "turkey": 5, "tr": 5,
-    "vietnam": 6, "vn": 6,
-    "indonesia": 5, "id": 5,
-    "south korea": 5, "kr": 5,
-    "taiwan": 5, "tw": 5,
-    "russia": 6, "ru": 6,
-    "poland": 5, "pl": 5,
-    "czech republic": 5, "cz": 5,
-    "hungary": 4, "hu": 4,
-    "romania": 6, "ro": 6,
-    "portugal": 4, "pt": 4,
-    "argentina": 4, "ar": 4,
-    "chile": 7, "cl": 7,
-    "colombia": 6, "co": 6,
-    "peru": 5, "pe": 5,
-    "ireland": 7, "ie": 7,
-    "united kingdom": 0, "uk": 0,
-    "canada": 0, "ca": 0
-  };
-
-  const targetLen = lengths[c] || 0;
-  if (targetLen > 0 && digits.length > 0 && digits.length < targetLen) {
-    return digits.padStart(targetLen, "0");
-  }
-  
-  return cleaned;
+  if (code && !digits.startsWith(code)) return `+${code}${digits}`;
+  if (digits.startsWith("0")) return `+${digits.slice(1)}`;
+  return digits.startsWith("+") ? digits : `+${digits}`;
 }
 
 export function expandState(abbr: string, country: string) {
@@ -133,9 +58,8 @@ const SPECIAL_CHAR_CO = /[^\w\s&]/g;
 
 export function normalizeCompanyName(raw: any) {
   if (!raw) return "";
-  // Rule 3: company_name: KEEP apostrophes exactly
   let s = String(raw).trim();
-  s = s.replace(LEGAL_SUFFIXES, "").replace(/[^\w\s&']/g, " ").replace(/\s+/g, " ").trim();
+  s = s.replace(LEGAL_SUFFIXES, "").replace(SPECIAL_CHAR_CO, " ").replace(/\s+/g, " ").trim();
   return s.split(" ").map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : "").join(" ").trim();
 }
 
