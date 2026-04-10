@@ -81,8 +81,24 @@ export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | 
     return [indicator];
   };
 
-  const pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
+  let pool = specTitles.length > 0 ? [...specTitles] : [...TITLE_BANK];
   
+  // STRICT FUNCTION FILTERING: If spec sheet defines functions, remove all other functions from the pool!
+  if (allowedFunctions && allowedFunctions.length > 0) {
+    // Exact or partial match for allowed functions
+    const fnRegex = new RegExp(allowedFunctions.join("|"), "i");
+    const filtered = pool.filter(t => fnRegex.test(t.fn) || fnRegex.test(t.title));
+    if (filtered.length > 0) {
+      pool = filtered;
+    }
+  }
+
+  // Shuffle the entire pool once at the start of the run
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
   const groupedPool: Record<string, any[]> = {};
   pool.forEach(t => {
     const key = `${t.fn.toLowerCase()}|${t.level.toLowerCase()}`;
@@ -108,9 +124,20 @@ export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | 
       if (groupedPool[key]) candidates.push(...groupedPool[key]);
     });
 
+    // Fallback 1: STRICT FUNCTION MATCHING. Keep the requested function, ignore the level.
+    // This prevents "random finance sales titles" when IT is requested.
     if (candidates.length === 0) {
       Object.keys(groupedPool).forEach(k => {
         if (k.startsWith(`${inputFn.toLowerCase()}|`)) candidates.push(...groupedPool[k]);
+      });
+    }
+
+    // Fallback 2: Keep the level, drop the function (last resort)
+    if (candidates.length === 0) {
+      targetLevels.forEach(tl => {
+        Object.keys(groupedPool).forEach(k => {
+          if (k.endsWith(`|${tl.toLowerCase()}`)) candidates.push(...groupedPool[k]);
+        });
       });
     }
 

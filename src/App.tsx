@@ -52,6 +52,7 @@ export default function App() {
     const f = e.target.files?.[0];
     if (!f) return;
     if (isRaw) setRawFile(f); else setSpecFile(f);
+    e.target.value = ""; // Clear to allow re-upload of same file
   };
 
   const handleDrop = (e: React.DragEvent, isRaw: boolean) => {
@@ -80,9 +81,15 @@ export default function App() {
 
   const process = async () => {
     if (!rawFile || !specFile || phase === "running") return;
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
     setPhase("running"); setLogs([]); setProgress(0); setStats(null);
     const runId = Math.random().toString(36).substring(7).toUpperCase();
     addLog("accent", `>> SESSION_START [${runId}]`);
+    addLog("accent", `>> CLEANING_WORKSPACE...`);
+    addLog("accent", `>> INPUT_FILES: ${rawFile.name} (${(rawFile.size/1024).toFixed(1)}KB) // ${specFile.name} (${(specFile.size/1024).toFixed(1)}KB)`);
     setDownloadUrl(null); setStepStates(Array(8).fill("idle")); setPreview([]);
 
     addLog("accent", ">> INITIATING_SECURITY_SCAN...");
@@ -147,37 +154,53 @@ export default function App() {
       const sheet = specWb.Sheets[hn];
       const hrRaw: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
-      const levels = new Set<string>(), functions = new Set<string>(), assets = new Set<string>();
+      let specLvl = "";
+      let specFn = "";
       
-      // Find row where "email_optin" appears
-      let startRowIdx = 0;
+      // Extract spec constraints (Key-Value pairs)
       for (let i = 0; i < hrRaw.length; i++) {
-        if (hrRaw[i].some(cell => String(cell).toLowerCase().includes("email_optin"))) {
+        const row = hrRaw[i];
+        if (!row || row.length === 0) continue;
+        const keyCell = String(row[0]).toLowerCase().trim();
+        const valCell = row.slice(1).map(c => String(c).trim()).filter(Boolean).join(", ");
+        
+        if (keyCell.includes("job title") || keyCell.includes("job level") || keyCell.includes("seniority")) {
+          if (valCell) specLvl = valCell;
+        }
+        if (keyCell.includes("job function") || keyCell.includes("department") || keyCell.includes("role") || keyCell.includes("functions")) {
+          if (valCell) specFn = valCell;
+        }
+      }
+
+      addLog("accent", `>> SPEC_CONSTRAINTS: Level=[${specLvl || "ANY"}] Function=[${specFn || "ANY"}]`);
+      
+      const assets = new Set<string>();
+      
+      // Find row where "email_optin" appears and determine asset column
+      let startRowIdx = 0;
+      let assetColIdx = 11; // Default to L
+      for (let i = 0; i < hrRaw.length; i++) {
+        const row = hrRaw[i];
+        const optinIdx = row.findIndex(cell => String(cell).toLowerCase().includes("email_optin"));
+        if (optinIdx !== -1) {
           startRowIdx = i + 1;
+          const foundAssetCol = row.findIndex(cell => /asset|download/i.test(String(cell)));
+          if (foundAssetCol !== -1) assetColIdx = foundAssetCol;
           break;
         }
       }
 
-      for (let i = 0; i < hrRaw.length; i++) {
-        const row = hrRaw[i];
-        if (i === 0) continue; // Skip header row for levels/functions
-
-        // Standard column mapping for levels/functions (assuming they are in first few columns)
-        const lvl = String(row[1] || "").trim(); // Assuming col B
-        if (lvl && !/^(nan|job_level|level)$/i.test(lvl)) levels.add(lvl);
-        const fn = String(row[0] || "").trim(); // Assuming col A
-        if (fn && !/^(nan|job_function|function)$/i.test(fn)) functions.add(fn);
-        
-        // Asset extraction: Only after email_optin row
-        if (i >= startRowIdx) {
-          // Column L is index 11
-          const assetStr = String(row[11] || "").trim();
+      if (startRowIdx > 0) {
+        for (let i = startRowIdx; i < hrRaw.length; i++) {
+          const row = hrRaw[i];
+          let assetStr = String(row[assetColIdx] || "").trim();
+          if (!assetStr && assetColIdx !== 11) assetStr = String(row[11] || "").trim();
+          
           if (assetStr) {
             const parts = assetStr.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
             parts.forEach(p => {
-              // Hardened placeholder filtering: catch technical placeholders like "asset 1-2", "nan", but NOT descriptive names
               const isPlaceholder = /^(nan|asset_download|asset\s*\d+-\d+|asset\s*\d+)$/i.test(p) || p.toLowerCase() === "asset 1-2";
-              if (!isPlaceholder) {
+              if (!isPlaceholder && p.length > 2) {
                 assets.add(p);
               }
             });
@@ -185,8 +208,8 @@ export default function App() {
         }
       }
 
-      if (levels.size > 0) { allowedLevels = [...levels]; addLog("success", `✓ job_level: ${allowedLevels.join(", ")}`); }
-      if (functions.size > 0) { allowedFunctions = [...functions]; addLog("success", `✓ job_function: ${allowedFunctions.slice(0, 5).join(", ")}${allowedFunctions.length > 5 ? "…" : ""}`); }
+      allowedLevels = specLvl ? specLvl.split(/[,;/|]/).map(s => s.trim()).filter(Boolean) : null;
+      allowedFunctions = specFn ? specFn.split(/[,;/|]/).map(s => s.trim()).filter(Boolean) : null;
       
       if (assets.size > 0) { 
         const allAssets = [...assets];
@@ -272,8 +295,15 @@ export default function App() {
     setStep(4, "running"); setProgressMsg("Assigning AI titles…");
     const assignTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length);
     rows = await processInChunks(rows, 500, r => {
-      const inputFn = String(r[rawFnCol] || "IT").trim();
-      const inputLvl = String(r[rawLvlCol] || "Manager+").trim();
+      // STRICT OVERRIDE: If spec sheet has functions/levels, use them. Otherwise fallback to raw data.
+      const inputFn = (allowedFunctions && allowedFunctions.length > 0) 
+        ? allowedFunctions[Math.floor(Math.random() * allowedFunctions.length)]
+        : String(r[rawFnCol] || "IT").trim();
+        
+      const inputLvl = (allowedLevels && allowedLevels.length > 0)
+        ? allowedLevels[Math.floor(Math.random() * allowedLevels.length)]
+        : String(r[rawLvlCol] || "Manager+").trim();
+
       const t = assignTitle(inputFn, inputLvl);
       return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
     });
@@ -522,10 +552,21 @@ export default function App() {
   };
 
   const reset = () => {
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setRawFile(null); setSpecFile(null); setPhase("idle"); setProgress(0);
     setStepStates(Array(8).fill("idle")); setLogs([]); setStats(null);
     setPreview([]); setDownloadUrl(null); setProgressMsg("");
   };
+
+  React.useEffect(() => {
+    if (rawFile || specFile) {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+      setPhase("idle");
+      setStats(null);
+      setPreview([]);
+    }
+  }, [rawFile, specFile]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setIsBooting(false), 2500);
