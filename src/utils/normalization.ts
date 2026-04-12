@@ -68,10 +68,51 @@ export function cleanAddress(raw: any) {
   return String(raw).replace(/[.,/()]/g, "").replace(/\s+/g, " ").trim();
 }
 
+// Build a module-level cache so timestamps are generated once per run
+// and reused across all rows in the same processing job
+
+let _timestampPool: number[] = [];
+let _timestampPointer = 0;
+let _timestampTotal = 0;
+
+function buildTimestampPool(totalCount: number): void {
+  // Only rebuild if total count changed (new processing job)
+  if (_timestampTotal === totalCount && _timestampPool.length > 0) return;
+  
+  _timestampTotal = totalCount;
+  _timestampPointer = 0;
+  
+  const startSec = 9 * 3600 + 30 * 60;  // 34200 — 09:30:00
+  const endSec   = 11 * 3600 + 30 * 60; // 41400 — 11:30:00
+  const range    = endSec - startSec;    // 7200 seconds available
+
+  if (totalCount <= range) {
+    // Enough unique seconds for every row — pick totalCount unique seconds
+    // Create array of all possible seconds, shuffle, take first totalCount
+    const allSeconds: number[] = [];
+    for (let i = 0; i < range; i++) allSeconds.push(startSec + i);
+    
+    // Fisher-Yates shuffle
+    for (let i = allSeconds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allSeconds[i], allSeconds[j]] = [allSeconds[j], allSeconds[i]];
+    }
+    
+    _timestampPool = allSeconds.slice(0, totalCount);
+  } else {
+    // More rows than seconds — allow repeats but still randomize
+    // Fill pool with random seconds, no uniqueness guarantee
+    _timestampPool = [];
+    for (let i = 0; i < totalCount; i++) {
+      _timestampPool.push(startSec + Math.floor(Math.random() * range));
+    }
+  }
+}
+
 export function generateLeadDownloadDate(index: number, totalCount: number): string {
   const now = new Date();
 
-  // Step 1: Find what hour it is in IST right now
+  // IST hour check for shift date logic (keep existing shift logic)
   const istHour = parseInt(
     now.toLocaleString("en-US", {
       timeZone: "Asia/Kolkata",
@@ -81,32 +122,24 @@ export function generateLeadDownloadDate(index: number, totalCount: number): str
     10
   );
 
-  // Step 2: Get current New York date as a real Date object
   const nyDate = new Date(
     now.toLocaleString("en-US", { timeZone: "America/New_York" })
   );
 
-  // Step 3: If IST hour is between 0 and 6 (midnight to 6:59 AM),
-  // the user is still in the shift that started at 6 PM yesterday IST.
-  // New York is still on the previous day, so subtract 1 from NY date
-  // to lock it to the shift-start date.
   if (istHour >= 0 && istHour < 7) {
     nyDate.setDate(nyDate.getDate() - 1);
   }
-  // If IST hour is 18-23 (6 PM to midnight), use NY date as-is.
-  // No change needed because NY is naturally behind IST.
 
-  // Step 4: Format the date
   const yyyy = nyDate.getFullYear();
-  const mm = String(nyDate.getMonth() + 1).padStart(2, "0");
-  const dd = String(nyDate.getDate()).padStart(2, "0");
+  const mm   = String(nyDate.getMonth() + 1).padStart(2, "0");
+  const dd   = String(nyDate.getDate()).padStart(2, "0");
 
-  // Step 5: Distribute timestamps between 09:30:00 and 11:30:00
-  // Each row gets a unique second using prime number spacing
-  const startSec = 9 * 3600 + 30 * 60; // = 34200 seconds
-  const range = 7200;                    // 2 hours = 7200 seconds
-  const offset = (index * 137) % range;  // 137 is prime, spreads evenly
-  const totalSec = startSec + offset;
+  // Build the random pool once for this job
+  if (index === 0) buildTimestampPool(totalCount);
+
+  // Get this row's unique random second from the pool
+  const totalSec = _timestampPool[index] ?? 
+    (9 * 3600 + 30 * 60 + Math.floor(Math.random() * 7200));
 
   const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
   const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");

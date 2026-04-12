@@ -105,6 +105,7 @@ export default function App() {
     let specTitles: any[] = [], allowedLevels: string[] | null = null, allowedFunctions: string[] | null = null;
     let assetValues: string[] = [];
     let criteriaPool: any[] = [];
+    let levelSuffix = "Manager+";
     let titleDbPool: any[] = [];
 
     // Load Title Database
@@ -171,6 +172,20 @@ export default function App() {
       if (criteriaFound.length > 0) {
         addLog("info", `→ Found ${criteriaFound.length} title criteria in Sheet 1`);
         
+        const extractSuffix = (str: string) => {
+          const t = str.toLowerCase();
+          if (t.endsWith("manager+")) return "Manager+";
+          if (t.endsWith("director+")) return "Director+";
+          if (t.endsWith("vp+")) return "VP+";
+          if (t.endsWith("cxo") || t.endsWith("c-level")) return "CXO";
+          if (t.endsWith("manager")) return "Manager";
+          if (t.endsWith("director")) return "Director";
+          if (t.endsWith("vp")) return "VP";
+          return "Manager+"; // default
+        };
+        
+        levelSuffix = extractSuffix(criteriaFound[0]);
+
         const mapFnToKey = (fn: string) => {
           const t = fn.toLowerCase();
           if (t.includes("it") || t.includes("information technology") || t.includes("information tech")) return "Information Technology";
@@ -318,7 +333,7 @@ export default function App() {
 
     // STEP 3 — Title assignment
     setStep(4, "running"); setProgressMsg("Assigning AI titles…");
-    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, criteriaPool);
+    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, levelSuffix, criteriaPool);
     rows = await processInChunks(rows, 500, r => {
       const t = getNextTitle();
       return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
