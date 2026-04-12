@@ -65,69 +65,124 @@ export function normalizeCompanyName(raw: any) {
 
 export function cleanAddress(raw: any) {
   if (!raw) return "";
-  return String(raw).replace(/[.()]/g, "").replace(/\s+/g, " ").trim();
+  return String(raw).replace(/[.,/()]/g, "").replace(/\s+/g, " ").trim();
 }
 
-export function generateLeadDownloadDate(index: number, totalCount: number) {
-  // Date: CURRENT US date (until Indian IST 8 am then Change to next US date)
-  // Time: RANDOM between 09:30:00 and 11:30:00
-  // STRICT: NO duplicate timestamps, NO repeated minutes, NO future time, NO timezone suffix, NO milliseconds, MUST be TEXT format.
-  
+export function generateLeadDownloadDate(index: number, totalCount: number): string {
   const now = new Date();
-  // Get current time in IST
-  const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  
-  // Determine the US date to use
-  // "until Indian IST 8 am then Change to next US date"
-  // US date is usually 1 day behind IST.
-  // Let's just use the current date in America/New_York.
-  const nyDate = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  
-  if (istTime.getHours() >= 8) {
-    // Change to next US date
-    nyDate.setDate(nyDate.getDate() + 1);
+
+  // Step 1: Find what hour it is in IST right now
+  const istHour = parseInt(
+    now.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      hour12: false
+    }),
+    10
+  );
+
+  // Step 2: Get current New York date as a real Date object
+  const nyDate = new Date(
+    now.toLocaleString("en-US", { timeZone: "America/New_York" })
+  );
+
+  // Step 3: If IST hour is between 0 and 6 (midnight to 6:59 AM),
+  // the user is still in the shift that started at 6 PM yesterday IST.
+  // New York is still on the previous day, so subtract 1 from NY date
+  // to lock it to the shift-start date.
+  if (istHour >= 0 && istHour < 7) {
+    nyDate.setDate(nyDate.getDate() - 1);
   }
-  
+  // If IST hour is 18-23 (6 PM to midnight), use NY date as-is.
+  // No change needed because NY is naturally behind IST.
+
+  // Step 4: Format the date
   const yyyy = nyDate.getFullYear();
-  const mm = String(nyDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(nyDate.getDate()).padStart(2, '0');
-  
-  // Time: between 09:30:00 and 11:30:00
-  // Total seconds in 2 hours = 7200
-  // We need to distribute `totalCount` timestamps within this range without duplicates.
-  // If totalCount > 7200, we have to duplicate, but the prompt says "NO duplicate timestamps".
-  // Assuming totalCount <= 7200.
-  
-  // To avoid repeated minutes, we should space them out.
-  // Actually, "NO repeated minutes" is impossible if totalCount > 120.
-  // Let's just generate a unique second for each index.
-  // Start at 09:30:00 (which is 9 * 3600 + 30 * 60 = 34200 seconds)
-  // End at 11:30:00 (which is 11 * 3600 + 30 * 60 = 41400 seconds)
-  
-  const startSec = 34200;
-  const endSec = 41400;
-  const range = endSec - startSec;
-  
-  // Space them evenly or randomly? "RANDOM between 09:30:00 and 11:30:00"
-  // Let's use a pseudo-random but unique sequence.
-  // A simple way is to use a linear congruential generator or just space them and shuffle.
-  // Since we only generate one at a time, let's just use a hash of the index to pick a second,
-  // and resolve collisions.
-  
-  // Actually, to keep it simple and unique:
-  const step = Math.max(1, Math.floor(range / totalCount));
-  const offset = (index * 137) % range; // 137 is a prime
+  const mm = String(nyDate.getMonth() + 1).padStart(2, "0");
+  const dd = String(nyDate.getDate()).padStart(2, "0");
+
+  // Step 5: Distribute timestamps between 09:30:00 and 11:30:00
+  // Each row gets a unique second using prime number spacing
+  const startSec = 9 * 3600 + 30 * 60; // = 34200 seconds
+  const range = 7200;                    // 2 hours = 7200 seconds
+  const offset = (index * 137) % range;  // 137 is prime, spreads evenly
   const totalSec = startSec + offset;
-  
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  
-  const hhStr = String(h).padStart(2, '0');
-  const mmStr = String(m).padStart(2, '0');
-  const ssStr = String(s).padStart(2, '0');
-  
-  return `${yyyy}-${mm}-${dd} ${hhStr}:${mmStr}:${ssStr}`;
+
+  const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSec % 60).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd} ${h}:${m}:${s}`;
+}
+
+const POSTAL_LENGTHS: Record<string, number> = {
+  // North America — numeric only (Canada is alpha, handled separately)
+  "united states": 5, "us": 5, "usa": 5,
+  "mexico": 5,
+
+  // Europe — numeric postal codes
+  "germany": 5, "france": 5, "italy": 5, "spain": 5,
+  "sweden": 5, "finland": 5, "poland": 5,
+  "czech republic": 5, "greece": 5, "turkey": 5,
+  "netherlands": 4, "belgium": 4, "switzerland": 4, "austria": 4,
+  "norway": 4, "denmark": 4, "portugal": 4, "hungary": 4,
+  "bulgaria": 4,
+
+  // Asia Pacific
+  "india": 6, "china": 6, "singapore": 6,
+  "japan": 7, "south korea": 5,
+  "australia": 4, "new zealand": 4,
+  "thailand": 5, "malaysia": 5, "indonesia": 5,
+  "pakistan": 5, "bangladesh": 4, "vietnam": 6,
+  "philippines": 4,
+
+  // Middle East and Africa
+  "saudi arabia": 5, "uae": 5, "united arab emirates": 5,
+  "egypt": 5, "south africa": 4, "nigeria": 6, "israel": 7,
+
+  // South America and others
+  "brazil": 8, "argentina": 4,
+  "russia": 6, "ukraine": 5, "romania": 6,
+};
+
+// Countries that use alphanumeric postal codes — never pad these
+const ALPHA_POSTAL_COUNTRIES = new Set([
+  "united kingdom", "uk", "gb", "great britain",
+  "canada", "ca",
+  "ireland", "ie",
+  "malta", "mt",
+  "netherlands", // dutch codes can be "1234 AB" format
+]);
+
+export function fixPostalCode(raw: string, countryRaw: string): string {
+  if (!raw || !raw.trim()) return "";
+
+  const trimmed = raw.trim();
+
+  // Use lowercase ONLY for the dictionary lookup
+  // Never modify countryRaw — the output file keeps original casing
+  const key = String(countryRaw || "").trim().toLowerCase();
+
+  // If this country uses alphanumeric codes, return as-is immediately
+  if (ALPHA_POSTAL_COUNTRIES.has(key)) return trimmed;
+
+  // Look up required length for this country
+  const requiredLength = POSTAL_LENGTHS[key];
+
+  // Country not in our list — return as-is
+  if (!requiredLength) return trimmed;
+
+  // If postal code has ANY letter — return as-is, never pad
+  const isNumericOnly = /^\d+$/.test(trimmed);
+  if (!isNumericOnly) return trimmed;
+
+  // Numeric and shorter than required — pad zeros at the front
+  if (trimmed.length < requiredLength) {
+    return trimmed.padStart(requiredLength, "0");
+  }
+
+  // Already correct length or longer — return as-is
+  return trimmed;
 }
 
 export function applyCasingCycle(name: string, idx: number) {

@@ -97,8 +97,110 @@ export function parseSpecJobTitles(rawText: string) {
 
 const LEVEL_DIST_PCT: Record<string, number> = { "CXO": 5, "VP": 10, "Director": 15, "Manager": 30, "Owner": 5, "Partner": 5, "Senior": 20, "Individual Contributor": 10 };
 
-export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number) {
+function matchToAllowed(
+  detected: string, 
+  allowedFunctions: string[], 
+  fallback: string
+): string {
+  if (!allowedFunctions || allowedFunctions.length === 0) return detected;
+  
+  const match = allowedFunctions.find(
+    f => f.trim().toLowerCase() === detected.toLowerCase()
+  );
+  
+  if (match) return match; // return exact casing from header sheet
+  
+  // Try partial match — e.g. header says "IT" and detected is "Information Technology"
+  const partial = allowedFunctions.find(
+    f => f.trim().toLowerCase().includes(detected.toLowerCase()) ||
+         detected.toLowerCase().includes(f.trim().toLowerCase())
+  );
+  
+  if (partial) return partial;
+  
+  // Not available in allowed list — use fallback
+  return fallback;
+}
+
+export function detectFunctionFromTitle(
+  title: string, 
+  allowedFunctions: string[], 
+  fallback: string
+): string {
+  const t = title.toLowerCase();
+
+  // Priority checks first — these override the general department
+  if (/\bsecurity\b|\brisk\b|\bcyber\b/.test(t))          return matchToAllowed("Security", allowedFunctions, fallback);
+  if (/\bdata\b/.test(t))                                   return matchToAllowed("Data", allowedFunctions, fallback);
+  if (/\bcompliance\b|\blegal\b|\bcounsel\b/.test(t))       return matchToAllowed("Legal", allowedFunctions, fallback);
+  if (/\bprocurement\b|\bpurchas\b|\bsourc\b/.test(t))      return matchToAllowed("Procurement", allowedFunctions, fallback);
+
+  // General department checks
+  if (/\binformation tech\b|\b\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b/.test(t))
+                                                             return matchToAllowed("Information Technology", allowedFunctions, fallback);
+  if (/\bsales\b|\brevenue\b|\bbusiness develop\b/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
+  if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b/.test(t))
+                                                             return matchToAllowed("Finance", allowedFunctions, fallback);
+  if (/\bmarketing\b|\bbrand\b|\bdemand\b|\bgrowth\b|\bcampaign\b|\bcontent\b/.test(t))
+                                                             return matchToAllowed("Marketing", allowedFunctions, fallback);
+  if (/\bhr\b|\bhuman resource\b|\bpeople\b|\btalent\b|\bworkforce\b|\brecruit\b/.test(t))
+                                                             return matchToAllowed("Human Resources", allowedFunctions, fallback);
+  if (/\boperat\b|\bsupply chain\b|\blogistic\b|\bproduction\b/.test(t))
+                                                             return matchToAllowed("Operations", allowedFunctions, fallback);
+  if (/\bengineer\b|\bsoftware\b|\bdevelop\b|\bplatform\b|\bdevops\b/.test(t))
+                                                             return matchToAllowed("Engineering", allowedFunctions, fallback);
+  if (/\bproduct\b/.test(t))                                return matchToAllowed("Product", allowedFunctions, fallback);
+
+  // Nothing matched — return fallback
+  return fallback;
+}
+
+export function matchStrictHeader(dbValue: string, allowedValues: string[] | null, defaultFallback: string) {
+  if (!allowedValues || allowedValues.length === 0) return dbValue || defaultFallback;
+  const lowerVal = (dbValue || "").toLowerCase();
+  
+  // 1. Exact match
+  let m = allowedValues.find(a => a.toLowerCase() === lowerVal);
+  if (m) return m;
+  
+  // 2. Substring match
+  m = allowedValues.find(a => lowerVal.includes(a.toLowerCase()) || a.toLowerCase().includes(lowerVal));
+  if (m) return m;
+  
+  // 3. IT / Information Technology
+  if (lowerVal === "it" && allowedValues.some(a => a.toLowerCase().includes("information technology"))) {
+    return allowedValues.find(a => a.toLowerCase().includes("information technology"))!;
+  }
+  if (lowerVal.includes("information technology") && allowedValues.some(a => a.toLowerCase() === "it")) {
+    return allowedValues.find(a => a.toLowerCase() === "it")!;
+  }
+  
+  // 4. HR / Human Resources
+  if (lowerVal === "hr" && allowedValues.some(a => a.toLowerCase().includes("human resources"))) {
+    return allowedValues.find(a => a.toLowerCase().includes("human resources"))!;
+  }
+  if (lowerVal.includes("human resources") && allowedValues.some(a => a.toLowerCase() === "hr")) {
+    return allowedValues.find(a => a.toLowerCase() === "hr")!;
+  }
+  
+  // Fallback to the first allowed value to guarantee it's strictly from the header
+  return allowedValues[0];
+}
+
+export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number, criteriaPool?: any[]) {
   Object.keys(_titleCursors).forEach(k => delete _titleCursors[k]);
+  
+  if (criteriaPool && criteriaPool.length > 0) {
+    const shuffled = [...criteriaPool].sort(() => Math.random() - 0.5);
+    let pointer = 0;
+    
+    return function getNextTitle() {
+      const entry = shuffled[pointer % shuffled.length];
+      pointer++;
+      return entry; // { title, level, fn }
+    };
+  }
+
   let pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
   
   if (allowedFunctions?.length) {

@@ -5,10 +5,10 @@ import { T, STRICT_HEADERS, TITLE_BANK } from "./constants";
 import { 
   stripSpecialChars, toTitleCase, cleanText, normalizeEmail, 
   isValidEmail, cleanPhone, expandState, buildCompanyDedup, resolveNames,
-  cleanAddress, generateLeadDownloadDate
+  cleanAddress, generateLeadDownloadDate, fixPostalCode
 } from "./utils/normalization";
 import { 
-  mapIndustry, mapEmployeeSize, parseSpecJobTitles, buildTitleAssigner 
+  mapIndustry, mapEmployeeSize, parseSpecJobTitles, buildTitleAssigner, matchStrictHeader, detectFunctionFromTitle
 } from "./utils/titles";
 import { NavBar } from "./components/NavBar";
 import { UploadCard } from "./components/UploadCard";
@@ -19,10 +19,8 @@ const FALLBACK_FLAGS = Symbol("fallbacks");
 export default function App() {
   const [rawFile, setRawFile] = useState<File | null>(null);
   const [specFile, setSpecFile] = useState<File | null>(null);
-  const [titlesFile, setTitlesFile] = useState<File | null>(null);
   const [rawDrag, setRawDrag] = useState(false);
   const [specDrag, setSpecDrag] = useState(false);
-  const [titlesDrag, setTitlesDrag] = useState(false);
   const [phase, setPhase] = useState("idle");
   const [progress, setProgress] = useState(0);
   const [stepStates, setStepStates] = useState(Array(8).fill("idle"));
@@ -50,21 +48,19 @@ export default function App() {
     setStepStates(prev => { const n = [...prev]; n[idx] = state; return n; });
   }, []);
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>, type: "raw" | "spec" | "titles") => {
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>, type: "raw" | "spec") => {
     const f = e.target.files?.[0];
     if (!f) return;
     if (type === "raw") setRawFile(f);
-    else if (type === "spec") setSpecFile(f);
-    else setTitlesFile(f);
+    else setSpecFile(f);
   };
 
-  const handleDrop = (e: React.DragEvent, type: "raw" | "spec" | "titles") => {
+  const handleDrop = (e: React.DragEvent, type: "raw" | "spec") => {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
     if (!f) return;
     if (type === "raw") { setRawFile(f); setRawDrag(false); }
-    else if (type === "spec") { setSpecFile(f); setSpecDrag(false); }
-    else { setTitlesFile(f); setTitlesDrag(false); }
+    else { setSpecFile(f); setSpecDrag(false); }
   };
 
   const toggleKey = (k: keyof typeof toggles) => { setToggles(t => ({ ...t, [k]: !t[k] })); };
@@ -102,23 +98,142 @@ export default function App() {
     addLog("success", "✓ PORTAL_STABLE");
     
     addLog("accent", "→ Reading files…");
-    const [rawWb, specWb, titlesWb] = await Promise.all([readExcel(rawFile), readExcel(specFile), readExcel(titlesFile!)]);
+    const [rawWb, specWb] = await Promise.all([readExcel(rawFile), readExcel(specFile)]);
     const rawData: any[] = XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[0]], { defval: "" });
     addLog("success", `✓ Raw data: ${rawData.length} rows`);
 
     let specTitles: any[] = [], allowedLevels: string[] | null = null, allowedFunctions: string[] | null = null;
     let assetValues: string[] = [];
+    let criteriaPool: any[] = [];
+    let titleDbPool: any[] = [];
 
+    // Load Title Database
     try {
+      const response = await fetch('/MSFT_titles_expanded_v2.csv');
+      const csvText = await response.text();
+      const titlesWb = XLSX.read(csvText, { type: 'string' });
       const titlesData: any[] = XLSX.utils.sheet_to_json(titlesWb.Sheets[titlesWb.SheetNames[0]], { defval: "" });
-      specTitles = titlesData.map(r => ({
+      titleDbPool = titlesData.map(r => ({
         fn: String(r["Function"] || "").trim(),
         level: String(r["Level"] || "").trim(),
         title: String(r["Job Title"] || "").trim()
       })).filter(t => t.fn && t.level && t.title);
-      addLog("success", `✓ Title DB: ${specTitles.length} entries`);
+      addLog("success", `✓ Title DB: ${titleDbPool.length} entries`);
     } catch (e: any) { addLog("error", "⚠ Title DB error: " + e.message); }
     
+    // Old logic: Parse spec titles from spec sheet
+    try {
+      const specsName = specWb.SheetNames.find(n => /spec/i.test(n)) || specWb.SheetNames[0];
+      const specsRows: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[specsName], { defval: "" });
+      for (const row of specsRows) {
+        const vals = Object.values(row);
+        const key = String(vals[0] || "").toLowerCase().trim();
+        const val = String(vals[1] || "").trim();
+        if ((key.includes("job title") || key.includes("jobtitle")) && val) {
+          specTitles = parseSpecJobTitles(val);
+          addLog("success", `✓ Spec titles: ${specTitles.length} entries`);
+          if (specTitles.length > 0) {
+            addLog("info", `  → ${specTitles.slice(0, 3).map(t => `${t.title} [${t.level}]`).join(" · ")}`);
+          }
+          break;
+        }
+      }
+      if (!specTitles.length) addLog("warn", "⚠ No Job Titles in Spec — using title bank");
+    } catch (e: any) { addLog("warn", "⚠ Spec sheet error: " + e.message); }
+
+    // Parse Sheet 1 for Job Titles criteria
+    try {
+      const sheet1Name = specWb.SheetNames[0];
+      const sheet1Rows: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[sheet1Name], { defval: "", header: 1 });
+      let criteriaFound: string[] = [];
+      
+      for (let r = 0; r < sheet1Rows.length; r++) {
+        const row = sheet1Rows[r];
+        let foundCol = -1;
+        for (let c = 0; c < row.length; c++) {
+          if (String(row[c] || "").trim().toLowerCase() === "job titles") {
+            foundCol = c + 1; // The values are usually in the next column
+            break;
+          }
+        }
+        
+        if (foundCol !== -1) {
+          // Read downwards from this row
+          for (let i = r; i < sheet1Rows.length; i++) {
+            const val = String(sheet1Rows[i][foundCol] || "").trim();
+            if (!val && i > r) break; // Stop at empty cell after the first
+            if (val) criteriaFound.push(val);
+          }
+          break; // Found the section, stop scanning
+        }
+      }
+
+      if (criteriaFound.length > 0) {
+        addLog("info", `→ Found ${criteriaFound.length} title criteria in Sheet 1`);
+        
+        const mapFnToKey = (fn: string) => {
+          const t = fn.toLowerCase();
+          if (t.includes("it") || t.includes("information technology") || t.includes("information tech")) return "Information Technology";
+          if (t.includes("hr") || t.includes("human resources") || t.includes("human resource")) return "Human Resources";
+          if (t.includes("finance") || t.includes("financial")) return "Finance";
+          if (t.includes("sales")) return "Sales";
+          if (t.includes("marketing")) return "Marketing";
+          if (t.includes("operations") || t.includes("ops")) return "Operations";
+          if (t.includes("security") || t.includes("cyber")) return "Security";
+          if (t.includes("engineering") || t.includes("engineer")) return "Engineering";
+          if (t.includes("general management") || t.includes("management")) return "General Management";
+          return fn; // fallback
+        };
+
+        const getAllowedLevels = (str: string) => {
+          const t = str.toLowerCase();
+          if (t.endsWith("manager+")) return ["Manager", "Director", "VP", "CXO"];
+          if (t.endsWith("director+")) return ["Director", "VP", "CXO"];
+          if (t.endsWith("vp+")) return ["VP", "CXO"];
+          if (t.endsWith("cxo") || t.endsWith("c-level")) return ["CXO"];
+          if (t.endsWith("manager")) return ["Manager"];
+          if (t.endsWith("director")) return ["Director"];
+          if (t.endsWith("vp")) return ["VP"];
+          return ["Manager", "Director", "VP", "CXO"]; // default
+        };
+
+        for (const criteria of criteriaFound) {
+          const dept = mapFnToKey(criteria);
+          const allowed = getAllowedLevels(criteria);
+          
+          const matches = titleDbPool.filter(t => {
+            const tFn = t.fn.toLowerCase();
+            const tLvl = t.level.toLowerCase();
+            
+            // Function match
+            const fnMatch = tFn === dept.toLowerCase() || 
+                            (dept === "Information Technology" && tFn === "it") ||
+                            (dept === "Human Resources" && tFn === "hr");
+                            
+            if (!fnMatch) return false;
+            
+            // Level match
+            return allowed.some(a => tLvl.includes(a.toLowerCase()) || 
+                                     (a === "CXO" && tLvl.includes("chief")));
+          });
+          
+          criteriaPool.push(...matches);
+        }
+        
+        // Deduplicate
+        const uniqueTitles = new Set();
+        criteriaPool = criteriaPool.filter(t => {
+          if (uniqueTitles.has(t.title)) return false;
+          uniqueTitles.add(t.title);
+          return true;
+        });
+        
+        if (criteriaPool.length > 0) {
+          addLog("success", `✓ Criteria pool: ${criteriaPool.length} titles loaded`);
+        }
+      }
+    } catch (e: any) { addLog("warn", "⚠ Sheet 1 error: " + e.message); }
+
     try {
       const hn = specWb.SheetNames.find(n => /header/i.test(n)) || specWb.SheetNames[0];
       const hr: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "" });
@@ -203,7 +318,7 @@ export default function App() {
 
     // STEP 3 — Title assignment
     setStep(4, "running"); setProgressMsg("Assigning AI titles…");
-    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length);
+    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, criteriaPool);
     rows = await processInChunks(rows, 500, r => {
       const t = getNextTitle();
       return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
@@ -259,8 +374,12 @@ export default function App() {
       const company_size = r._company_size || mapEmployeeSize(String(r[sizeCol] || ""));
       if (!company_size) yellowCells.push({ rowIdx: idx + 1, col: "company_size" });
       
-      const job_level = r._job_level || (allowedLevels ? allowedLevels[0] : "Director");
-      const job_function = r._job_function || (allowedFunctions ? allowedFunctions[0] : "General");
+      const job_level = matchStrictHeader(r._job_level, allowedLevels, "Director");
+      const job_function = detectFunctionFromTitle(
+        job_title,
+        allowedFunctions || [],
+        r._job_function || (allowedFunctions ? allowedFunctions[0] : "General")
+      );
       if (!r._job_level) yellowCells.push({ rowIdx: idx + 1, col: "job_level" });
       if (!r._job_function) yellowCells.push({ rowIdx: idx + 1, col: "job_function" });
       
@@ -271,7 +390,8 @@ export default function App() {
       if (isExceptionCountry) { state = rawState ? expandState(rawState, country) : ""; }
       else { state = city || ""; if (!rawState && city) yellowCells.push({ rowIdx: idx + 1, col: "state" }); }
       
-      const postal_code = String(r[postalCol] || "").trim();
+      const rawPostal = String(r[postalCol] || "").trim();
+      const postal_code = fixPostalCode(rawPostal, String(r[countryCol] || ""));
       const address = cleanAddress(r[addrCol] || "");
       
       if (!firstName) yellowCells.push({ rowIdx: idx + 1, col: "firstName" });
@@ -346,7 +466,7 @@ export default function App() {
   };
 
   const reset = () => {
-    setRawFile(null); setSpecFile(null); setTitlesFile(null); setPhase("idle"); setProgress(0);
+    setRawFile(null); setSpecFile(null); setPhase("idle"); setProgress(0);
     setStepStates(Array(8).fill("idle")); setLogs([]); setStats(null);
     setPreview([]); setDownloadUrl(null); setProgressMsg("");
   };
@@ -357,7 +477,7 @@ export default function App() {
   }, []);
 
   const STEP_NAMES = ["Detect", "Email", "Names", "Phone", "Titles", "Dedup", "Validate", "Export"];
-  const ready = !!(rawFile && specFile && titlesFile);
+  const ready = !!(rawFile && specFile);
 
   return (
     <div className="flex min-h-screen flex-col bg-bg font-sans text-sm text-text-pri relative overflow-hidden">
@@ -488,7 +608,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Upload Section */}
-        <div className="mb-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="mb-10 grid grid-cols-1 gap-6 md:grid-cols-2">
           <UploadCard 
             label="RAW_INPUT_STREAM" hint="LEADS_DATA // .XLSX .CSV" icon="⚡"
             file={rawFile} drag={rawDrag}
@@ -504,14 +624,6 @@ export default function App() {
             onDragLeave={() => setSpecDrag(false)}
             onDrop={e => handleDrop(e, "spec")}
             onChange={e => handleFileInput(e, "spec")}
-          />
-          <UploadCard 
-            label="TITLE_DATABASE" hint="MSFT_TITLES // .CSV" icon="📚"
-            file={titlesFile} drag={titlesDrag}
-            onDragOver={e => { e.preventDefault(); setTitlesDrag(true); }}
-            onDragLeave={() => setTitlesDrag(false)}
-            onDrop={e => handleDrop(e, "titles")}
-            onChange={e => handleFileInput(e, "titles")}
           />
         </div>
 
