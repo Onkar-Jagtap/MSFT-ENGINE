@@ -374,7 +374,12 @@ export default function App() {
       const company_size = r._company_size || mapEmployeeSize(String(r[sizeCol] || ""));
       if (!company_size) yellowCells.push({ rowIdx: idx + 1, col: "company_size" });
       
-      const job_level = matchStrictHeader(r._job_level, allowedLevels, "Director");
+      let baseLevel = r._job_level;
+      if (/\bchief\b|^c[a-z]o\b/i.test(job_title)) {
+        baseLevel = "CXO";
+      }
+      const job_level = matchStrictHeader(baseLevel, allowedLevels, "Director");
+      
       const job_function = detectFunctionFromTitle(
         job_title,
         allowedFunctions || [],

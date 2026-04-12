@@ -110,16 +110,34 @@ function matchToAllowed(
   
   if (match) return match; // return exact casing from header sheet
   
-  // Try partial match — e.g. header says "IT" and detected is "Information Technology"
-  const partial = allowedFunctions.find(
-    f => f.trim().toLowerCase().includes(detected.toLowerCase()) ||
-         detected.toLowerCase().includes(f.trim().toLowerCase())
-  );
+  // Try partial match safely
+  const detectedLower = detected.toLowerCase();
+  const partial = allowedFunctions.find(f => {
+    const fl = f.trim().toLowerCase();
+    if (fl === "it" && detectedLower === "information technology") return true;
+    if (detectedLower === "it" && fl === "information technology") return true;
+    if (fl === "hr" && detectedLower === "human resources") return true;
+    if (detectedLower === "hr" && fl === "human resources") return true;
+    
+    // Avoid false positives like "security".includes("it")
+    // Only do includes if length > 3 to be safe
+    if (fl.length > 3 && detectedLower.includes(fl)) return true;
+    if (detectedLower.length > 3 && fl.includes(detectedLower)) return true;
+    
+    return false;
+  });
   
   if (partial) return partial;
   
   // Not available in allowed list — use fallback
-  return fallback;
+  if (fallback) {
+    const fallbackMatch = allowedFunctions.find(
+      f => f.trim().toLowerCase() === fallback.toLowerCase()
+    );
+    if (fallbackMatch) return fallbackMatch;
+  }
+  
+  return allowedFunctions[0];
 }
 
 export function detectFunctionFromTitle(
@@ -130,29 +148,29 @@ export function detectFunctionFromTitle(
   const t = title.toLowerCase();
 
   // Priority checks first — these override the general department
-  if (/\bsecurity\b|\brisk\b|\bcyber\b/.test(t))          return matchToAllowed("Security", allowedFunctions, fallback);
+  if (/security|\brisk\b|cyber/.test(t))          return matchToAllowed("Security", allowedFunctions, fallback);
   if (/\bdata\b/.test(t))                                   return matchToAllowed("Data", allowedFunctions, fallback);
   if (/\bcompliance\b|\blegal\b|\bcounsel\b/.test(t))       return matchToAllowed("Legal", allowedFunctions, fallback);
-  if (/\bprocurement\b|\bpurchas\b|\bsourc\b/.test(t))      return matchToAllowed("Procurement", allowedFunctions, fallback);
+  if (/\bprocurement\b|\bpurchas|\bsourc/.test(t))      return matchToAllowed("Procurement", allowedFunctions, fallback);
 
   // General department checks
-  if (/\binformation tech\b|\b\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b/.test(t))
+  if (/\binformation tech|\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b/.test(t))
                                                              return matchToAllowed("Information Technology", allowedFunctions, fallback);
-  if (/\bsales\b|\brevenue\b|\bbusiness develop\b/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
+  if (/\bsales\b|\brevenue\b|\bbusiness develop/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
   if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b/.test(t))
                                                              return matchToAllowed("Finance", allowedFunctions, fallback);
   if (/\bmarketing\b|\bbrand\b|\bdemand\b|\bgrowth\b|\bcampaign\b|\bcontent\b/.test(t))
                                                              return matchToAllowed("Marketing", allowedFunctions, fallback);
-  if (/\bhr\b|\bhuman resource\b|\bpeople\b|\btalent\b|\bworkforce\b|\brecruit\b/.test(t))
+  if (/\bhr\b|\bhuman resource|\bpeople\b|\btalent\b|\bworkforce\b|\brecruit/.test(t))
                                                              return matchToAllowed("Human Resources", allowedFunctions, fallback);
-  if (/\boperat\b|\bsupply chain\b|\blogistic\b|\bproduction\b/.test(t))
+  if (/\boperat|\bsupply chain\b|\blogistic|\bproduction\b/.test(t))
                                                              return matchToAllowed("Operations", allowedFunctions, fallback);
-  if (/\bengineer\b|\bsoftware\b|\bdevelop\b|\bplatform\b|\bdevops\b/.test(t))
+  if (/\bengineer/.test(t))
                                                              return matchToAllowed("Engineering", allowedFunctions, fallback);
   if (/\bproduct\b/.test(t))                                return matchToAllowed("Product", allowedFunctions, fallback);
 
   // Nothing matched — return fallback
-  return fallback;
+  return matchToAllowed(fallback, allowedFunctions, fallback);
 }
 
 export function matchStrictHeader(dbValue: string, allowedValues: string[] | null, defaultFallback: string) {
@@ -181,6 +199,16 @@ export function matchStrictHeader(dbValue: string, allowedValues: string[] | nul
   }
   if (lowerVal.includes("human resources") && allowedValues.some(a => a.toLowerCase() === "hr")) {
     return allowedValues.find(a => a.toLowerCase() === "hr")!;
+  }
+  
+  // 5. CXO / C-Level / Chief
+  const isCxoDb = lowerVal === "cxo" || lowerVal.includes("chief") || lowerVal.includes("c-level") || lowerVal.includes("c level");
+  if (isCxoDb) {
+    const cxoMatch = allowedValues.find(a => {
+      const al = a.toLowerCase();
+      return al === "cxo" || al.includes("c-level") || al.includes("c level") || al.includes("chief");
+    });
+    if (cxoMatch) return cxoMatch;
   }
   
   // Fallback to the first allowed value to guarantee it's strictly from the header
