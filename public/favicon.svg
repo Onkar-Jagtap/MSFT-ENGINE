@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#020205"/>
+      <stop offset="70%" stop-color="#050a1f"/>
+      <stop offset="100%" stop-color="#00f3ff"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="80%" stop-color="transparent"/>
+      <stop offset="95%" stop-color="#00f3ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <linearGradient id="swirl1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f3ff"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </linearGradient>
+    <linearGradient id="swirl2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff00ff"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background / Outer Casing -->
+  <circle cx="64" cy="64" r="60" fill="#02050a" stroke="#004466" stroke-width="2"/>
+  <circle cx="64" cy="64" r="56" fill="none" stroke="#001122" stroke-width="4"/>
+  
+  <!-- Outer Nodes -->
+  <!-- Top Purple -->
+  <ellipse cx="64" cy="12" rx="8" ry="4" fill="#ff00ff" filter="blur(1px)"/>
+  <ellipse cx="64" cy="12" rx="4" ry="2" fill="#ffffff"/>
+  <!-- Bottom Cyan -->
+  <ellipse cx="64" cy="116" rx="8" ry="4" fill="#00f3ff" filter="blur(1px)"/>
+  <ellipse cx="64" cy="116" rx="4" ry="2" fill="#ffffff"/>
+  <!-- Left Cyan -->
+  <ellipse cx="12" cy="64" rx="4" ry="8" fill="#00f3ff" filter="blur(1px)"/>
+  <ellipse cx="12" cy="64" rx="2" ry="4" fill="#ffffff"/>
+  <!-- Right Cyan -->
+  <ellipse cx="116" cy="64" rx="4" ry="8" fill="#00f3ff" filter="blur(1px)"/>
+  <ellipse cx="116" cy="64" rx="2" ry="4" fill="#ffffff"/>
+  
+  <!-- Diagonal Purple Nodes -->
+  <circle cx="28" cy="28" r="3" fill="#ff00ff" filter="blur(1px)"/>
+  <circle cx="100" cy="28" r="3" fill="#ff00ff" filter="blur(1px)"/>
+  <circle cx="28" cy="100" r="3" fill="#ff00ff" filter="blur(1px)"/>
+  <circle cx="100" cy="100" r="3" fill="#ff00ff" filter="blur(1px)"/>
+
+  <!-- Main Glowing Ring -->
+  <circle cx="64" cy="64" r="42" fill="url(#core)"/>
+  <circle cx="64" cy="64" r="42" fill="none" stroke="url(#glow)" stroke-width="8"/>
+  <circle cx="64" cy="64" r="38" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.9"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#00f3ff" stroke-width="1" opacity="0.5"/>
+
+  <!-- Inner Swirls -->
+  <path d="M 64 30 C 90 30, 95 50, 95 64 C 95 90, 75 95, 64 95 C 38 95, 33 75, 33 64 C 33 38, 50 33, 64 30 Z" fill="none" stroke="url(#swirl1)" stroke-width="3" transform="rotate(20 64 64)"/>
+  <path d="M 64 35 C 85 35, 90 55, 90 64 C 90 85, 70 90, 64 90 C 43 90, 38 70, 38 64 C 38 43, 55 38, 64 35 Z" fill="none" stroke="url(#swirl2)" stroke-width="2" transform="rotate(110 64 64)"/>
+  <path d="M 64 40 C 80 40, 85 60, 85 64 C 85 80, 65 85, 64 85 C 48 85, 43 65, 43 64 C 43 48, 60 43, 64 40 Z" fill="none" stroke="#00f3ff" stroke-width="1" opacity="0.6" transform="rotate(200 64 64)"/>
+
+  <!-- Deep Center -->
+  <circle cx="64" cy="64" r="15" fill="#010103" filter="blur(2px)"/>
+  <circle cx="64" cy="64" r="4" fill="#ff00ff" opacity="0.3" filter="blur(2px)"/>
+</svg>
