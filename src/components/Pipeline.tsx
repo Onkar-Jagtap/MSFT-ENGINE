@@ -56,10 +56,12 @@ export const PipelineStep: React.FC<PipelineStepProps> = ({ name, index, state }
 export function StatCard({ label, value, sub, color, delay }: { label: string, value: string | number, sub: string, color: string, delay: number }) {
   return (
     <motion.div 
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.5, delay: delay * 0.1, ease: "easeOut" }}
-      className="group relative overflow-hidden border border-white/10 bg-black/40 p-6 transition-all hover:border-primary/30 hover:bg-black/60"
+      layout
+      initial={{ opacity: 0, x: -20, scale: 0.95 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      whileHover={{ scale: 1.02, y: -2 }}
+      transition={{ duration: 0.4, delay: delay * 0.1, ease: "easeOut" }}
+      className="group relative overflow-hidden border border-white/10 bg-black/40 p-6 transition-colors hover:border-primary/30 hover:bg-black/60"
     >
       <div className="absolute top-0 left-0 h-1 w-0 bg-primary transition-all duration-500 group-hover:w-full" />
       
@@ -72,9 +74,15 @@ export function StatCard({ label, value, sub, color, delay }: { label: string, v
         </div>
       </div>
 
-      <div className="font-display text-5xl font-black tracking-tighter neon-text" style={{ color }}>
+      <motion.div 
+        key={value}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="font-display text-5xl font-black tracking-tighter neon-text" 
+        style={{ color }}
+      >
         {value}
-      </div>
+      </motion.div>
       
       <div className="mt-4 flex items-center justify-between">
         <div className="font-mono text-[9px] font-bold uppercase tracking-widest text-text-sec opacity-60">

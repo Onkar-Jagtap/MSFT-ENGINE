@@ -42,18 +42,23 @@ export function NavBar({ phase, onReset, onProcess, ready }: { phase: string, on
           <motion.button
             whileHover={{ scale: ready && phase !== "running" ? 1.05 : 1 }}
             whileTap={{ scale: ready && phase !== "running" ? 0.95 : 1 }}
-            className="group relative flex h-10 items-center justify-center overflow-hidden border border-primary bg-primary/10 px-8 font-display text-[11px] font-bold tracking-widest text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/20 hover:neon-border"
+            className="group relative flex h-10 items-center justify-center overflow-hidden border border-primary bg-primary/10 px-8 font-display text-[11px] font-bold tracking-widest text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/20 hover:neon-border glitch-hover"
             onClick={onProcess}
             disabled={!ready || phase === "running"}
           >
             <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
+            <motion.div 
+              animate={{ top: ["-10%", "110%"] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+              className="absolute left-0 right-0 h-[1px] bg-primary/50 shadow-[0_0_5px_rgba(0,243,255,0.8)]"
+            />
             {phase === "running" ? (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 relative z-10">
                 <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
                 <span>EXECUTING...</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 relative z-10">
                 <span>RUN_PIPELINE</span>
               </div>
             )}

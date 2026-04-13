@@ -16,7 +16,9 @@ interface UploadCardProps {
 export function UploadCard({ label, hint, icon, file, drag, onDragOver, onDragLeave, onDrop, onChange }: UploadCardProps) {
   return (
     <motion.label
+      layout
       whileHover={{ y: -4, scale: 1.01 }}
+      whileTap={{ scale: 0.98 }}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -37,27 +39,38 @@ export function UploadCard({ label, hint, icon, file, drag, onDragOver, onDragLe
 
       <div className="flex flex-col items-center justify-center p-8 text-center">
         {file && (
-          <div className="absolute top-4 right-4 flex h-6 w-6 items-center justify-center bg-success text-[10px] font-black text-black shadow-[0_0_10px_rgba(0,255,65,0.5)]">
+          <motion.div 
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            className="absolute top-4 right-4 flex h-6 w-6 items-center justify-center bg-success text-[10px] font-black text-black shadow-[0_0_10px_rgba(0,255,65,0.5)]"
+          >
             OK
-          </div>
+          </motion.div>
         )}
         
-        <div className={`mb-4 flex h-16 w-16 items-center justify-center border-2 text-3xl transition-all duration-300
-          ${file ? "border-success/30 bg-success/10 neon-text" : "border-primary/20 bg-primary/5 neon-text"}`}>
+        <motion.div 
+          layout
+          className={`mb-4 flex h-16 w-16 items-center justify-center border-2 text-3xl transition-all duration-300
+          ${file ? "border-success/30 bg-success/10 neon-text" : "border-primary/20 bg-primary/5 neon-text"}`}
+        >
           {icon}
-        </div>
+        </motion.div>
         
-        <div className="font-display mb-2 text-sm font-black tracking-widest text-text-pri uppercase">{label}</div>
-        <div className="font-mono text-[10px] leading-relaxed tracking-tight text-text-sec uppercase opacity-70">{hint}</div>
+        <motion.div layout className="font-display mb-2 text-sm font-black tracking-widest text-text-pri uppercase">{label}</motion.div>
+        <motion.div layout className="font-mono text-[10px] leading-relaxed tracking-tight text-text-sec uppercase opacity-70">{hint}</motion.div>
         
         {file ? (
-          <div className="mt-4 inline-block border border-success/30 bg-success/10 px-3 py-1.5 font-mono text-[10px] font-bold text-success uppercase tracking-widest">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 inline-block border border-success/30 bg-success/10 px-3 py-1.5 font-mono text-[10px] font-bold text-success uppercase tracking-widest"
+          >
             {file.name}
-          </div>
+          </motion.div>
         ) : (
-          <div className="mt-4 font-mono text-[9px] text-text-mut uppercase tracking-[0.2em]">
+          <motion.div layout className="mt-4 font-mono text-[9px] text-text-mut uppercase tracking-[0.2em]">
             [ <span className="text-primary animate-pulse">awaiting_input</span> ]
-          </div>
+          </motion.div>
         )}
       </div>
     </motion.label>

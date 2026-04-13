@@ -548,12 +548,13 @@ export default function App() {
         
         {/* Header Section */}
         <motion.div 
+          layout
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-10 flex items-end justify-between border-b-2 border-primary/20 pb-6"
         >
           <div>
-            <h1 className="font-display text-6xl font-black tracking-tighter text-white neon-text">
+            <h1 className="font-display text-6xl font-black tracking-tighter text-white neon-text glitch-hover" data-text="MSFT ENGINE by PJA">
               MSFT ENGINE by PJA
             </h1>
             <p className="font-mono mt-2 text-xs font-bold tracking-[0.5em] text-primary uppercase">
@@ -565,12 +566,18 @@ export default function App() {
               <motion.button 
                 initial={{ scale: 0, x: 50, opacity: 0 }}
                 animate={{ scale: 1, x: 0, opacity: 1 }}
-                whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(0,255,65,0.4)" }}
+                whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(0,255,65,0.6)" }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowDownloadModal(true)}
-                className="flex items-center gap-4 border-2 border-success bg-success/20 px-10 py-4 font-display text-sm font-black tracking-[0.2em] text-success shadow-[0_0_15px_rgba(0,255,65,0.3)] transition-all"
+                className="group relative flex items-center gap-4 overflow-hidden border-2 border-success bg-success/20 px-10 py-4 font-display text-sm font-black tracking-[0.2em] text-success shadow-[0_0_15px_rgba(0,255,65,0.3)] transition-all glitch-hover"
               >
-                <span className="animate-bounce">↓</span> DOWNLOAD_XLSX
+                <motion.div 
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="absolute inset-0 bg-success/10"
+                />
+                <span className="relative z-10 animate-bounce">↓</span> 
+                <span className="relative z-10">DOWNLOAD_XLSX</span>
               </motion.button>
             )}
           </div>
@@ -670,12 +677,18 @@ export default function App() {
                     <div className="font-mono text-[8px] text-text-mut">{s}</div>
                   </div>
                   <div 
-                    className={`relative h-5 w-10 cursor-pointer border transition-all duration-200 ${toggles[k as keyof typeof toggles] ? "border-primary bg-primary/20" : "border-white/10 bg-white/5"}`}
+                    className={`relative h-5 w-10 cursor-pointer border transition-all duration-200 ${toggles[k as keyof typeof toggles] ? "border-primary bg-primary/20 shadow-[0_0_10px_rgba(0,243,255,0.3)]" : "border-white/10 bg-white/5"}`}
                     onClick={() => toggleKey(k as keyof typeof toggles)}
                   >
                     <motion.div 
-                      animate={{ left: toggles[k as keyof typeof toggles] ? 22 : 2 }}
-                      className={`absolute top-0.5 h-3.5 w-3.5 ${toggles[k as keyof typeof toggles] ? "bg-primary shadow-[0_0_8px_rgba(0,243,255,0.8)]" : "bg-text-mut"}`}
+                      layout
+                      initial={false}
+                      animate={{ 
+                        x: toggles[k as keyof typeof toggles] ? 20 : 0,
+                        backgroundColor: toggles[k as keyof typeof toggles] ? "#00f3ff" : "#666666"
+                      }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                      className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 ${toggles[k as keyof typeof toggles] ? "shadow-[0_0_8px_rgba(0,243,255,0.8)]" : ""}`}
                     />
                   </div>
                 </div>
@@ -705,11 +718,19 @@ export default function App() {
                   </div>
                   <div className="font-display text-2xl font-black text-primary neon-text">{progress}%</div>
                 </div>
-                <div className="h-2 border border-white/10 bg-white/5 p-0.5">
-                  <motion.div 
-                    animate={{ width: `${progress}%` }}
-                    className="h-full bg-primary shadow-[0_0_15px_rgba(0,243,255,0.6)]"
-                  />
+                <div className="h-3 border border-white/10 bg-black/40 p-0.5 flex gap-[2px]">
+                  {Array.from({ length: 40 }).map((_, i) => (
+                    <motion.div 
+                      key={i}
+                      animate={{ 
+                        opacity: i < (progress / 2.5) ? 1 : 0.1,
+                        backgroundColor: i < (progress / 2.5) ? "#00f3ff" : "#333333"
+                      }}
+                      transition={{ duration: 0.2 }}
+                      className="h-full flex-1"
+                      style={{ boxShadow: i < (progress / 2.5) ? "0 0 8px rgba(0,243,255,0.5)" : "none" }}
+                    />
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -729,12 +750,27 @@ export default function App() {
                 ref={logRef} 
                 className="h-64 overflow-y-auto border border-white/10 bg-black/60 p-5 font-mono text-[10px] leading-relaxed"
               >
-                {logs.map((l, i) => (
-                  <div key={i} className="mb-1 flex gap-3" style={{ color: l.type === "success" ? "#00ff41" : l.type === "error" ? "#ff003c" : l.type === "warn" ? "#f3ff00" : l.type === "accent" ? "#00f3ff" : "#888888" }}>
-                    <span className="opacity-40">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
-                    <span className="font-bold">{l.msg}</span>
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {logs.map((l, i) => (
+                    <motion.div 
+                      key={i} 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="mb-1 flex gap-3" 
+                      style={{ color: l.type === "success" ? "#00ff41" : l.type === "error" ? "#ff003c" : l.type === "warn" ? "#f3ff00" : l.type === "accent" ? "#00f3ff" : "#888888" }}
+                    >
+                      <span className="opacity-40">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
+                      <span className="font-bold">{l.msg}</span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {phase === "running" && (
+                  <motion.div 
+                    animate={{ opacity: [0, 1, 0] }} 
+                    transition={{ repeat: Infinity, duration: 0.8 }}
+                    className="mt-2 h-3 w-2 bg-primary"
+                  />
+                )}
               </div>
             </div>
 
@@ -781,10 +817,10 @@ export default function App() {
                     {preview.map((r, i) => (
                       <motion.tr 
                         key={i} 
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.05 }}
-                        className="transition-colors hover:bg-primary/5"
+                        initial={{ opacity: 0, x: -20, filter: "blur(4px)" }}
+                        animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                        transition={{ delay: i * 0.08, duration: 0.4, ease: "easeOut" }}
+                        className="transition-colors hover:bg-primary/10"
                       >
                         <td className="px-4 py-3 text-white">{r.firstName}</td>
                         <td className="px-4 py-3 text-white">{r.lastName}</td>
@@ -792,7 +828,7 @@ export default function App() {
                         <td className="px-4 py-3 text-text-sec">{r.company_name}</td>
                         <td className="px-4 py-3 font-bold text-white">{r.job_title}</td>
                         <td className="px-4 py-3">
-                          <span className="border border-accent/30 bg-accent/10 px-2 py-0.5 text-[8px] font-bold text-accent uppercase">
+                          <span className="border border-accent/30 bg-accent/10 px-2 py-0.5 text-[8px] font-bold text-accent uppercase shadow-[0_0_5px_rgba(255,0,255,0.2)]">
                             {r.job_level}
                           </span>
                         </td>
