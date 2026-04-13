@@ -846,14 +846,25 @@ export default function App() {
         {/* Empty state */}
         {phase === "idle" && !rawFile && !specFile && (
           <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-32"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center justify-center py-32 relative"
           >
-            <div className="font-display mb-6 text-6xl font-black text-white/5 neon-text">
+            <motion.div 
+              animate={{ opacity: [0.3, 0.5, 0.3] }}
+              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+              className="font-display mb-6 text-6xl font-black text-white/5 neon-text glitch-hover"
+              data-text="OFFLINE"
+            >
               OFFLINE
-            </div>
-            <div className="font-mono text-[10px] font-bold tracking-[0.5em] text-primary/40 uppercase">
+            </motion.div>
+            <div className="font-mono text-[10px] font-bold tracking-[0.5em] text-primary/40 uppercase relative overflow-hidden px-4 py-1">
+              <motion.div 
+                animate={{ x: ["-100%", "100%"] }}
+                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/10 to-transparent"
+              />
               // AWAITING_DATA_UPLOADS
             </div>
           </motion.div>
