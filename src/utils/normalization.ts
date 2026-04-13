@@ -85,10 +85,29 @@ function buildTimestampPool(totalCount: number): void {
   const startSec = 9 * 3600 + 30 * 60;  // 34200 — 09:30:00
   const endSec   = 11 * 3600 + 30 * 60; // 41400 — 11:30:00
   const range    = endSec - startSec;    // 7200 seconds available
+  const totalMinutes = Math.floor(range / 60); // 120 minutes available
 
-  if (totalCount <= range) {
-    // Enough unique seconds for every row — pick totalCount unique seconds
-    // Create array of all possible seconds, shuffle, take first totalCount
+  if (totalCount <= totalMinutes) {
+    // We have fewer rows than available minutes.
+    // Guarantee UNIQUE MINUTES for every row.
+    const allMinutes: number[] = [];
+    for (let i = 0; i < totalMinutes; i++) allMinutes.push(i);
+    
+    // Shuffle minutes
+    for (let i = allMinutes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allMinutes[i], allMinutes[j]] = [allMinutes[j], allMinutes[i]];
+    }
+    
+    _timestampPool = [];
+    for (let i = 0; i < totalCount; i++) {
+      const m = allMinutes[i];
+      const randomSec = Math.floor(Math.random() * 60);
+      _timestampPool.push(startSec + (m * 60) + randomSec);
+    }
+  } else if (totalCount <= range) {
+    // We have more rows than minutes, but fewer rows than seconds.
+    // Minutes WILL repeat, but we can guarantee UNIQUE SECONDS.
     const allSeconds: number[] = [];
     for (let i = 0; i < range; i++) allSeconds.push(startSec + i);
     

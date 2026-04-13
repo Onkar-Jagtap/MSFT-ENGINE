@@ -154,7 +154,7 @@ export function detectFunctionFromTitle(
   if (/\bprocurement\b|\bpurchas|\bsourc/.test(t))      return matchToAllowed("Procurement", allowedFunctions, fallback);
 
   // General department checks
-  if (/\binformation tech|\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b/.test(t))
+  if (/\binformation tech|\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b|\bcloud\b|\btech\b|\btechnology\b|\bsoftware\b|\bdevops\b/.test(t))
                                                              return matchToAllowed("Information Technology", allowedFunctions, fallback);
   if (/\bsales\b|\brevenue\b|\bbusiness develop/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
   if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b/.test(t))
@@ -296,6 +296,12 @@ function buildSlots(
     assigned += count;
 
     const groupTitles = getTitlesForGroup(d.levelGroup, pool);
+    
+    // Shuffle groupTitles to ensure a diverse selection of keywords
+    for (let i = groupTitles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [groupTitles[i], groupTitles[j]] = [groupTitles[j], groupTitles[i]];
+    }
     
     // Fill this group's count by cycling through its titles
     for (let j = 0; j < count; j++) {
