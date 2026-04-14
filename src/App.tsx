@@ -105,8 +105,9 @@ export default function App() {
     let specTitles: any[] = [], allowedLevels: string[] | null = null, allowedFunctions: string[] | null = null;
     let assetValues: string[] = [];
     let criteriaPool: any[] = [];
-    let levelSuffix = "Manager+";
     let titleDbPool: any[] = [];
+    let criteriaLevelMap = new Map<string, string>();
+    let specCustomQ1 = "", specCustomQ2 = "", specCustomQ3 = "", specCustomQ4 = "", specCustomQ5 = "", specCustomQ6 = "", specCustomQ7 = "";
 
     // Load Title Database
     try {
@@ -162,7 +163,10 @@ export default function App() {
           // Read downwards from this row
           for (let i = r; i < sheet1Rows.length; i++) {
             const val = String(sheet1Rows[i][foundCol] || "").trim();
-            if (!val && i > r) break; // Stop at empty cell after the first
+            const lowerVal = val.toLowerCase();
+            if (i > r && (!val || lowerVal.includes("secondary") || lowerVal.includes("tertiary") || lowerVal.includes("note") || lowerVal.includes("audience"))) {
+              break; // Stop at empty cell or stop-words
+            }
             if (val) criteriaFound.push(val);
           }
           break; // Found the section, stop scanning
@@ -174,6 +178,8 @@ export default function App() {
         
         const extractSuffix = (str: string) => {
           const t = str.toLowerCase();
+          if (t.includes("director") && t.includes("vp")) return "Director+";
+          if (t.includes("manager") && t.includes("director")) return "Manager+";
           if (t.endsWith("manager+")) return "Manager+";
           if (t.endsWith("director+")) return "Director+";
           if (t.endsWith("vp+")) return "VP+";
@@ -184,13 +190,11 @@ export default function App() {
           return "Manager+"; // default
         };
         
-        levelSuffix = extractSuffix(criteriaFound[0]);
-
         const mapFnToKey = (fn: string) => {
           const t = fn.toLowerCase();
           if (t.includes("it") || t.includes("information technology") || t.includes("information tech")) return "Information Technology";
           if (t.includes("hr") || t.includes("human resources") || t.includes("human resource")) return "Human Resources";
-          if (t.includes("finance") || t.includes("financial")) return "Finance";
+          if (t.includes("finance") || t.includes("financial") || t.includes("account")) return "Finance";
           if (t.includes("sales")) return "Sales";
           if (t.includes("marketing")) return "Marketing";
           if (t.includes("operations") || t.includes("ops")) return "Operations";
@@ -202,6 +206,8 @@ export default function App() {
 
         const getAllowedLevels = (str: string) => {
           const t = str.toLowerCase();
+          if (t.includes("director") && t.includes("vp")) return ["Director", "VP", "CXO"];
+          if (t.includes("manager") && t.includes("director")) return ["Manager", "Director", "VP", "CXO"];
           if (t.endsWith("manager+")) return ["Manager", "Director", "VP", "CXO"];
           if (t.endsWith("director+")) return ["Director", "VP", "CXO"];
           if (t.endsWith("vp+")) return ["VP", "CXO"];
@@ -215,10 +221,12 @@ export default function App() {
         for (const criteria of criteriaFound) {
           const dept = mapFnToKey(criteria);
           const allowed = getAllowedLevels(criteria);
+          const suffix = extractSuffix(criteria);
+          criteriaLevelMap.set(dept, suffix);
           
           const matches = titleDbPool.filter(t => {
             const tFn = t.fn.toLowerCase();
-            const tLvl = t.level.toLowerCase();
+            const tLvl = t.level;
             
             // Function match
             const fnMatch = tFn === dept.toLowerCase() || 
@@ -227,12 +235,19 @@ export default function App() {
                             
             if (!fnMatch) return false;
             
-            // Level match
-            return allowed.some(a => tLvl.includes(a.toLowerCase()) || 
-                                     (a === "CXO" && tLvl.includes("chief")));
+            // Strict Level match
+            if (allowed.includes("Manager") && tLvl === "Manager") return true;
+            if (allowed.includes("Director") && tLvl.includes("Director")) return true;
+            if (allowed.includes("VP") && tLvl.includes("VP")) return true;
+            if (allowed.includes("CXO") && tLvl === "Chief") return true;
+            
+            return false;
           });
           
-          criteriaPool.push(...matches);
+          // Tag each entry with its own levelSuffix
+          for (const m of matches) {
+            criteriaPool.push({ ...m, levelSuffix: suffix });
+          }
         }
         
         // Deduplicate
@@ -252,6 +267,20 @@ export default function App() {
     try {
       const hn = specWb.SheetNames.find(n => /header/i.test(n)) || specWb.SheetNames[0];
       const hr: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "" });
+      const hrRaw: any[][] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "", header: 1 });
+      
+      for (const row of hrRaw) {
+        if (!row || row.length < 2) continue;
+        const col0 = String(row[0]).trim().toLowerCase();
+        const col1 = String(row[1]).trim();
+        if (col0.includes("custom_question_1")) specCustomQ1 = col1;
+        if (col0.includes("custom_question_2")) specCustomQ2 = col1;
+        if (col0.includes("custom_question_3")) specCustomQ3 = col1;
+        if (col0.includes("custom_question_4")) specCustomQ4 = col1;
+        if (col0.includes("custom_question_5")) specCustomQ5 = col1;
+        if (col0.includes("custom_question_6")) specCustomQ6 = col1;
+        if (col0.includes("custom_question_7")) specCustomQ7 = col1;
+      }
       
       const levels = new Set<string>(), functions = new Set<string>(), assets = new Set<string>();
       for (const row of hr) {
@@ -333,7 +362,7 @@ export default function App() {
 
     // STEP 3 — Title assignment
     setStep(4, "running"); setProgressMsg("Assigning AI titles…");
-    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, levelSuffix, criteriaPool);
+    const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, criteriaLevelMap, criteriaPool);
     rows = await processInChunks(rows, 500, r => {
       const t = getNextTitle();
       return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
@@ -395,15 +424,14 @@ export default function App() {
       }
       const job_level = matchStrictHeader(baseLevel, allowedLevels, "Director");
       
-      const job_function = detectFunctionFromTitle(
-        job_title,
-        allowedFunctions || [],
-        r._job_function || (allowedFunctions ? allowedFunctions[0] : "General")
-      );
+      const job_function = (!allowedFunctions || allowedFunctions.length === 0) 
+        ? (r._job_function || "") 
+        : detectFunctionFromTitle(job_title, allowedFunctions, r._job_function || allowedFunctions[0]);
+
       if (!r._job_level) yellowCells.push({ rowIdx: idx + 1, col: "job_level" });
       if (!r._job_function) yellowCells.push({ rowIdx: idx + 1, col: "job_function" });
       
-      const city = toTitleCase(cleanText(r[cityCol] || ""));
+      let city = toTitleCase(cleanText(r[cityCol] || ""));
       const isExceptionCountry = countryLower.includes("united states") || countryLower === "us" || countryLower === "usa" || countryLower.includes("canada") || countryLower.includes("india") || countryLower.includes("australia");
       const rawState = String(r[stateCol] || "").trim();
       let state = "";
@@ -411,8 +439,15 @@ export default function App() {
       else { state = city || ""; if (!rawState && city) yellowCells.push({ rowIdx: idx + 1, col: "state" }); }
       
       const rawPostal = String(r[postalCol] || "").trim();
-      const postal_code = fixPostalCode(rawPostal, String(r[countryCol] || ""));
-      const address = cleanAddress(r[addrCol] || "");
+      let postal_code = fixPostalCode(rawPostal, String(r[countryCol] || ""));
+      let address = cleanAddress(r[addrCol] || "");
+      
+      // BUG 7: Final cleanup for address, city, state, postal_code
+      const finalClean = (s: string) => s.replace(/[^a-zA-Z0-9 \-]/g, "").replace(/\s+/g, " ").trim();
+      address = finalClean(address);
+      city = finalClean(city);
+      state = finalClean(state);
+      postal_code = finalClean(postal_code);
       
       if (!firstName) yellowCells.push({ rowIdx: idx + 1, col: "firstName" });
       if (!lastName) yellowCells.push({ rowIdx: idx + 1, col: "lastName" });
@@ -428,18 +463,28 @@ export default function App() {
       
       const lead_download_date = generateLeadDownloadDate(idx, rows.length);
 
+      // BUG 11 & 12: Custom Questions
+      let cq1 = specCustomQ1 || "";
+      if (countryLower === "canada") {
+        if (state.toLowerCase() === "quebec") {
+          cq1 = "French";
+        } else {
+          cq1 = "English";
+        }
+      }
+
       return { 
         firstName, lastName, email, telephone, company_name: company, 
         job_title, industry, company_size, job_level, job_function, 
         email_optin: "1", asset_downloaded, address, address2: "", 
         city, state, postal_code, country, lead_download_date,
-        custom_question_1: String(r["custom_question_1"] || "").trim(),
-        custom_question_2: String(r["custom_question_2"] || "").trim(),
-        custom_question_3: String(r["custom_question_3"] || "").trim(),
-        custom_question_4: String(r["custom_question_4"] || "").trim(),
-        custom_question_5: String(r["custom_question_5"] || "").trim(),
-        custom_question_6: String(r["custom_question_6"] || "").trim(),
-        custom_question_7: "",
+        custom_question_1: cq1,
+        custom_question_2: specCustomQ2 || "",
+        custom_question_3: specCustomQ3 || "",
+        custom_question_4: specCustomQ4 || "",
+        custom_question_5: specCustomQ5 || "",
+        custom_question_6: specCustomQ6 || "",
+        custom_question_7: specCustomQ7 || "",
         linkedinprofileurl: String(r["linkedinprofileurl"] || "").trim()
       };
     });

@@ -132,14 +132,16 @@ export function generateLeadDownloadDate(index: number, totalCount: number): str
   const now = new Date();
 
   // IST hour check for shift date logic (keep existing shift logic)
-  const istHour = parseInt(
+  let istHour = parseInt(
     now.toLocaleString("en-US", {
       timeZone: "Asia/Kolkata",
       hour: "numeric",
-      hour12: false
+      hour12: false,
+      hourCycle: "h23"
     }),
     10
   );
+  if (isNaN(istHour)) istHour = 12; // default to business hours
 
   const nyDate = new Date(
     now.toLocaleString("en-US", { timeZone: "America/New_York" })
@@ -209,32 +211,32 @@ const ALPHA_POSTAL_COUNTRIES = new Set([
 export function fixPostalCode(raw: string, countryRaw: string): string {
   if (!raw || !raw.trim()) return "";
 
-  const trimmed = raw.trim();
+  const cleaned = raw.trim().replace(/[,.\s\-]/g, "");
 
   // Use lowercase ONLY for the dictionary lookup
   // Never modify countryRaw — the output file keeps original casing
   const key = String(countryRaw || "").trim().toLowerCase();
 
   // If this country uses alphanumeric codes, return as-is immediately
-  if (ALPHA_POSTAL_COUNTRIES.has(key)) return trimmed;
+  if (ALPHA_POSTAL_COUNTRIES.has(key)) return cleaned;
 
   // Look up required length for this country
   const requiredLength = POSTAL_LENGTHS[key];
 
   // Country not in our list — return as-is
-  if (!requiredLength) return trimmed;
+  if (!requiredLength) return cleaned;
 
   // If postal code has ANY letter — return as-is, never pad
-  const isNumericOnly = /^\d+$/.test(trimmed);
-  if (!isNumericOnly) return trimmed;
+  const isNumericOnly = /^\d+$/.test(cleaned);
+  if (!isNumericOnly) return cleaned;
 
   // Numeric and shorter than required — pad zeros at the front
-  if (trimmed.length < requiredLength) {
-    return trimmed.padStart(requiredLength, "0");
+  if (cleaned.length < requiredLength) {
+    return cleaned.padStart(requiredLength, "0");
   }
 
   // Already correct length or longer — return as-is
-  return trimmed;
+  return cleaned;
 }
 
 export function applyCasingCycle(name: string, idx: number) {

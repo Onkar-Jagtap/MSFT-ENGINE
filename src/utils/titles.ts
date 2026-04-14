@@ -157,7 +157,7 @@ export function detectFunctionFromTitle(
   if (/\binformation tech|\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b|\bcloud\b|\btech\b|\btechnology\b|\bsoftware\b|\bdevops\b/.test(t))
                                                              return matchToAllowed("Information Technology", allowedFunctions, fallback);
   if (/\bsales\b|\brevenue\b|\bbusiness develop/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
-  if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b/.test(t))
+  if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b|\baccount\b/.test(t))
                                                              return matchToAllowed("Finance", allowedFunctions, fallback);
   if (/\bmarketing\b|\bbrand\b|\bdemand\b|\bgrowth\b|\bcampaign\b|\bcontent\b/.test(t))
                                                              return matchToAllowed("Marketing", allowedFunctions, fallback);
@@ -295,7 +295,7 @@ function buildSlots(
     
     assigned += count;
 
-    const groupTitles = getTitlesForGroup(d.levelGroup, pool);
+    const groupTitles = [...getTitlesForGroup(d.levelGroup, pool)];
     
     // Shuffle groupTitles to ensure a diverse selection of keywords
     for (let i = groupTitles.length - 1; i > 0; i--) {
@@ -320,7 +320,14 @@ function buildSlots(
   return slots;
 }
 
-export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | null, allowedFunctions: string[] | null, totalCount: number, levelSuffix: string, criteriaPool?: any[]) {
+export function buildTitleAssigner(
+  specTitles: any[], 
+  allowedLevels: string[] | null, 
+  allowedFunctions: string[] | null, 
+  totalCount: number, 
+  criteriaLevelMap: Map<string, string>, 
+  criteriaPool?: any[]
+) {
   Object.keys(_titleCursors).forEach(k => delete _titleCursors[k]);
   
   let pool = specTitles.length > 0 ? specTitles : TITLE_BANK;
@@ -333,10 +340,39 @@ export function buildTitleAssigner(specTitles: any[], allowedLevels: string[] | 
     if (f.length) pool = f;
   }
 
-  const slots = buildSlots(pool, levelSuffix, totalCount);
+  // Group pool by function
+  const groups: Record<string, any[]> = {};
+  for (const t of pool) {
+    const fn = t.fn || "General";
+    if (!groups[fn]) groups[fn] = [];
+    groups[fn].push(t);
+  }
+
+  const allSlots: any[] = [];
+  const fnKeys = Object.keys(groups);
+  let assigned = 0;
+
+  fnKeys.forEach((fn, i) => {
+    const isLast = i === fnKeys.length - 1;
+    // Distribute totalCount evenly among functions
+    const count = isLast ? totalCount - assigned : Math.round(totalCount / fnKeys.length);
+    assigned += count;
+
+    const fnPool = groups[fn];
+    const suffix = criteriaLevelMap.get(fn) || criteriaLevelMap.get("Global") || "Manager+";
+    const fnSlots = buildSlots(fnPool, suffix, count);
+    allSlots.push(...fnSlots);
+  });
+
+  // Fisher-Yates shuffle the final merged slots array
+  for (let i = allSlots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [allSlots[i], allSlots[j]] = [allSlots[j], allSlots[i]];
+  }
+
   let idx = 0;
   return () => {
-    const t = slots[idx % slots.length];
+    const t = allSlots[idx % allSlots.length];
     idx++;
     return t || { title: "Manager", level: "Manager", fn: "General" };
   };
