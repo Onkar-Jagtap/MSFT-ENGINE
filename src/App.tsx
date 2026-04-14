@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { motion, AnimatePresence } from "motion/react";
-import { T, STRICT_HEADERS, TITLE_BANK } from "./constants";
+import { STRICT_HEADERS, TITLE_BANK } from "./constants";
 import { 
   stripSpecialChars, toTitleCase, cleanText, normalizeEmail, 
   isValidEmail, cleanPhone, expandState, buildCompanyDedup, resolveNames,
@@ -49,19 +49,31 @@ export default function App() {
   }, []);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>, type: "raw" | "spec") => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (type === "raw") setRawFile(f);
-    else setSpecFile(f);
+    try {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      if (type === "raw") setRawFile(f);
+      else setSpecFile(f);
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg(`File selection failed: ${err.message}`);
+    }
   };
 
   const handleDrop = (e: React.DragEvent, type: "raw" | "spec") => {
-    e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
-    if (type === "raw") { setRawFile(f); setRawDrag(false); }
-    else { setSpecFile(f); setSpecDrag(false); }
+    try {
+      e.preventDefault();
+      const f = e.dataTransfer.files[0];
+      if (!f) return;
+      if (type === "raw") { setRawFile(f); setRawDrag(false); }
+      else { setSpecFile(f); setSpecDrag(false); }
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg(`File drop failed: ${err.message}`);
+    }
   };
+
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const toggleKey = (k: keyof typeof toggles) => { setToggles(t => ({ ...t, [k]: !t[k] })); };
 
@@ -84,20 +96,22 @@ export default function App() {
     if (!rawFile || !specFile || phase === "running") return;
     setPhase("running"); setLogs([]); setProgress(0); setStats(null);
     setDownloadUrl(null); setStepStates(Array(8).fill("idle")); setPreview([]);
+    setErrorMsg(null);
 
-    addLog("accent", ">> INITIATING_SECURITY_SCAN...");
-    await new Promise(r => setTimeout(r, 400));
-    addLog("success", "✓ BIOMETRIC_VERIFICATION_PASSED");
-    addLog("accent", ">> DECRYPTING_DATA_STREAM...");
-    await new Promise(r => setTimeout(r, 300));
-    addLog("accent", ">> CHECKING_FOR_MALWARE_SIGNATURES...");
-    await new Promise(r => setTimeout(r, 300));
-    addLog("success", "✓ DATA_INTEGRITY_VERIFIED");
-    addLog("accent", ">> VERIFYING_PORTAL_STABILITY...");
-    await new Promise(r => setTimeout(r, 300));
-    addLog("success", "✓ PORTAL_STABLE");
-    
-    addLog("accent", "→ Reading files…");
+    try {
+      addLog("accent", ">> INITIATING_SECURITY_SCAN...");
+      await new Promise(r => setTimeout(r, 400));
+      addLog("success", "✓ BIOMETRIC_VERIFICATION_PASSED");
+      addLog("accent", ">> DECRYPTING_DATA_STREAM...");
+      await new Promise(r => setTimeout(r, 300));
+      addLog("accent", ">> CHECKING_FOR_MALWARE_SIGNATURES...");
+      await new Promise(r => setTimeout(r, 300));
+      addLog("success", "✓ DATA_INTEGRITY_VERIFIED");
+      addLog("accent", ">> VERIFYING_PORTAL_STABILITY...");
+      await new Promise(r => setTimeout(r, 300));
+      addLog("success", "✓ PORTAL_STABLE");
+      
+      addLog("accent", "→ Reading files…");
     const [rawWb, specWb] = await Promise.all([readExcel(rawFile), readExcel(specFile)]);
     const rawData: any[] = XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[0]], { defval: "" });
     addLog("success", `✓ Raw data: ${rawData.length} rows`);
@@ -164,7 +178,7 @@ export default function App() {
           for (let i = r; i < sheet1Rows.length; i++) {
             const val = String(sheet1Rows[i][foundCol] || "").trim();
             const lowerVal = val.toLowerCase();
-            if (i > r && (!val || lowerVal.includes("secondary") || lowerVal.includes("tertiary") || lowerVal.includes("note") || lowerVal.includes("audience"))) {
+            if (i > r && (!val || lowerVal.includes("secondary") || lowerVal.includes("tertiary") || lowerVal.includes("note"))) {
               break; // Stop at empty cell or stop-words
             }
             if (val) criteriaFound.push(val);
@@ -178,7 +192,7 @@ export default function App() {
         
         const extractSuffix = (str: string) => {
           const t = str.toLowerCase();
-          if (t.includes("director") && t.includes("vp")) return "Director+";
+          if (t.includes("director") && (t.includes("vp") || t.includes("vice president"))) return "Director/VP";
           if (t.includes("manager") && t.includes("director")) return "Manager+";
           if (t.endsWith("manager+")) return "Manager+";
           if (t.endsWith("director+")) return "Director+";
@@ -206,7 +220,7 @@ export default function App() {
 
         const getAllowedLevels = (str: string) => {
           const t = str.toLowerCase();
-          if (t.includes("director") && t.includes("vp")) return ["Director", "VP", "CXO"];
+          if (t.includes("director") && (t.includes("vp") || t.includes("vice president"))) return ["Director", "VP"];
           if (t.includes("manager") && t.includes("director")) return ["Manager", "Director", "VP", "CXO"];
           if (t.endsWith("manager+")) return ["Manager", "Director", "VP", "CXO"];
           if (t.endsWith("director+")) return ["Director", "VP", "CXO"];
@@ -226,7 +240,7 @@ export default function App() {
           
           const matches = titleDbPool.filter(t => {
             const tFn = t.fn.toLowerCase();
-            const tLvl = t.level;
+            const tTitle = t.title;
             
             // Function match
             const fnMatch = tFn === dept.toLowerCase() || 
@@ -235,11 +249,16 @@ export default function App() {
                             
             if (!fnMatch) return false;
             
-            // Strict Level match
-            if (allowed.includes("Manager") && tLvl === "Manager") return true;
-            if (allowed.includes("Director") && tLvl.includes("Director")) return true;
-            if (allowed.includes("VP") && tLvl.includes("VP")) return true;
-            if (allowed.includes("CXO") && tLvl === "Chief") return true;
+            // Strict Level match using regexes
+            const isMgr = /\bmanager\b|\bsr manager\b|\bsenior manager\b/i.test(tTitle);
+            const isDir = /\bdirector\b|\bhead\b|\bsr head\b|\bsenior head\b|\bsr director\b|\bsenior director\b/i.test(tTitle);
+            const isVp = /\bvp\b|\bsvp\b|\bavp\b|\bevp\b|\bsenior vice president\b|\bvice president\b/i.test(tTitle);
+            const isCxo = /\bchief\b|\bc[a-z]o\b|\bceo\b|\bcto\b|\bcfo\b|\bcoo\b|\bcio\b|\bciso\b|\bpresident\b/i.test(tTitle);
+            
+            if (allowed.includes("Manager") && isMgr) return true;
+            if (allowed.includes("Director") && isDir) return true;
+            if (allowed.includes("VP") && isVp) return true;
+            if (allowed.includes("CXO") && isCxo) return true;
             
             return false;
           });
@@ -269,21 +288,21 @@ export default function App() {
       const hr: any[] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "" });
       const hrRaw: any[][] = XLSX.utils.sheet_to_json(specWb.Sheets[hn], { defval: "", header: 1 });
       
-      for (const row of hrRaw) {
-        if (!row || row.length < 2) continue;
-        const col0 = String(row[0]).trim().toLowerCase();
-        const col1 = String(row[1]).trim();
-        if (col0.includes("custom_question_1")) specCustomQ1 = col1;
-        if (col0.includes("custom_question_2")) specCustomQ2 = col1;
-        if (col0.includes("custom_question_3")) specCustomQ3 = col1;
-        if (col0.includes("custom_question_4")) specCustomQ4 = col1;
-        if (col0.includes("custom_question_5")) specCustomQ5 = col1;
-        if (col0.includes("custom_question_6")) specCustomQ6 = col1;
-        if (col0.includes("custom_question_7")) specCustomQ7 = col1;
-      }
-      
       const levels = new Set<string>(), functions = new Set<string>(), assets = new Set<string>();
       for (const row of hr) {
+        // Horizontal parsing
+        for (const key of Object.keys(row)) {
+          const k = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const val = String(row[key]).trim();
+          if (!val) continue;
+          if (k.includes("customquestion1")) specCustomQ1 = val;
+          if (k.includes("customquestion2")) specCustomQ2 = val;
+          if (k.includes("customquestion3")) specCustomQ3 = val;
+          if (k.includes("customquestion4")) specCustomQ4 = val;
+          if (k.includes("customquestion5")) specCustomQ5 = val;
+          if (k.includes("customquestion6")) specCustomQ6 = val;
+        }
+
         const lvl = String(row["job_level"] || "").trim();
         if (lvl && !/^(nan|job_level)$/i.test(lvl)) levels.add(lvl);
         const fn = String(row["job_function"] || "").trim();
@@ -294,6 +313,22 @@ export default function App() {
         if (assetKey) {
           const assetVal = String(row[assetKey] || "").trim();
           if (assetVal && !/^(nan)$/i.test(assetVal)) assets.add(assetVal);
+        }
+      }
+
+      // Vertical parsing fallback
+      if (!specCustomQ1 && !specCustomQ2) {
+        for (const row of hrRaw) {
+          if (!row || row.length < 2) continue;
+          const col0 = String(row[0]).toLowerCase().replace(/[^a-z0-9]/g, "");
+          const col1 = String(row[1]).trim();
+          if (!col1) continue;
+          if (col0.includes("customquestion1")) specCustomQ1 = col1;
+          if (col0.includes("customquestion2")) specCustomQ2 = col1;
+          if (col0.includes("customquestion3")) specCustomQ3 = col1;
+          if (col0.includes("customquestion4")) specCustomQ4 = col1;
+          if (col0.includes("customquestion5")) specCustomQ5 = col1;
+          if (col0.includes("customquestion6")) specCustomQ6 = col1;
         }
       }
       if (levels.size > 0) { allowedLevels = [...levels]; addLog("success", `✓ job_level: ${allowedLevels.join(", ")}`); }
@@ -466,7 +501,8 @@ export default function App() {
       // BUG 11 & 12: Custom Questions
       let cq1 = specCustomQ1 || "";
       if (countryLower === "canada") {
-        if (state.toLowerCase() === "quebec") {
+        const isQuebec = /quebec|qubec|^qc$/i.test(state);
+        if (isQuebec) {
           cq1 = "French";
         } else {
           cq1 = "English";
@@ -484,7 +520,7 @@ export default function App() {
         custom_question_4: specCustomQ4 || "",
         custom_question_5: specCustomQ5 || "",
         custom_question_6: specCustomQ6 || "",
-        custom_question_7: specCustomQ7 || "",
+        custom_question_7: "",
         linkedinprofileurl: String(r["linkedinprofileurl"] || "").trim()
       };
     });
@@ -528,6 +564,12 @@ export default function App() {
     setPreview(finalRows.slice(0, 10));
     setPhase("done");
     setTimeout(() => { if (resultRef.current) resultRef.current.scrollIntoView({ behavior: "smooth" }); }, 400);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || "An unexpected error occurred during processing.");
+      addLog("error", `Processing failed: ${err.message || "Unknown error"}`);
+      setPhase("idle");
+    }
   };
 
   const reset = () => {
@@ -586,6 +628,14 @@ export default function App() {
       <NavBar phase={phase} onReset={reset} onProcess={process} ready={ready} />
 
       <main className="relative mx-auto w-full max-w-[1600px] flex-1 px-8 py-10 cyber-grid hex-grid">
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200">
+            <div className="flex items-center gap-2">
+              <span className="text-red-400">⚠️</span>
+              <span className="font-mono text-sm">{errorMsg}</span>
+            </div>
+          </div>
+        )}
         <div className="hud-bracket-tl m-4 opacity-10" />
         <div className="hud-bracket-tr m-4 opacity-10" />
         <div className="hud-bracket-bl m-4 opacity-10" />

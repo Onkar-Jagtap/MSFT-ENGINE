@@ -1,23 +1,3 @@
-export const T = {
-  bg: "#0B0F17",
-  card: "#121826",
-  cardHover: "#161e30",
-  border: "rgba(255,255,255,0.08)",
-  borderHov: "rgba(79,142,247,0.45)",
-  primary: "#4F8EF7",
-  grad: "linear-gradient(135deg,#4F8EF7 0%,#6C63FF 100%)",
-  gradBar: "linear-gradient(90deg,#4F8EF7,#6C63FF)",
-  success: "#34D399",
-  warn: "#FBBF24",
-  error: "#F87171",
-  accent: "#818CF8",
-  textPri: "#E6EAF2",
-  textSec: "#9AA3B2",
-  textMut: "#4B5568",
-  radius: "12px",
-  radiusSm: "8px",
-};
-
 export const US_STATES: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", DC: "District of Columbia", PR: "Puerto Rico", VI: "Virgin Islands", GU: "Guam"
 };

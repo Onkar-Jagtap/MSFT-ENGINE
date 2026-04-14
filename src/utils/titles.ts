@@ -239,6 +239,11 @@ function buildSlots(
       { levelGroup: "VP",       pct: 30 },
       { levelGroup: "CXO",      pct: 15 },
     ];
+  } else if (s === "director/vp") {
+    dist = [
+      { levelGroup: "Director", pct: 60 },
+      { levelGroup: "VP",       pct: 40 },
+    ];
   } else if (s === "vp+") {
     dist = [
       { levelGroup: "VP",  pct: 70 },
@@ -270,10 +275,10 @@ function buildSlots(
     pool: {title:string, level:string, fn:string}[]
   ) {
     const patterns: Record<string, RegExp> = {
-      "Manager":  /\bmanager\b|\bsenior manager\b|\bteam lead\b|\blead\b|\bsupervisor\b/i,
-      "Director": /\bdirector\b|\bsenior director\b|\bhead\b|\bassociate director\b/i,
-      "VP":       /\bvp\b|\bvice president\b|\bsvp\b|\bavp\b|\bevp\b|\bsenior vice president\b|\bassociate vice president\b/i,
-      "CXO":      /\bchief\b|\bcto\b|\bcfo\b|\bcoo\b|\bcio\b|\bciso\b|\bceo\b|\bpresident\b/i,
+      "Manager":  /\bmanager\b|\bsr manager\b|\bsenior manager\b/i,
+      "Director": /\bdirector\b|\bhead\b|\bsr head\b|\bsenior head\b|\bsr director\b|\bsenior director\b/i,
+      "VP":       /\bvp\b|\bsvp\b|\bavp\b|\bevp\b|\bsenior vice president\b|\bvice president\b/i,
+      "CXO":      /\bchief\b|\bc[a-z]o\b|\bceo\b|\bcto\b|\bcfo\b|\bcoo\b|\bcio\b|\bciso\b|\bpresident\b/i,
     };
     const regex = patterns[group];
     if (!regex) return pool;
@@ -302,10 +307,55 @@ function buildSlots(
       const j = Math.floor(Math.random() * (i + 1));
       [groupTitles[i], groupTitles[j]] = [groupTitles[j], groupTitles[i]];
     }
+
+    // Concept Round-Robin to ensure keyword diversity across ALL concepts
+    const conceptGroupsMap: Record<string, any[]> = {};
+    const stopWords = [
+      "divisional", "international", "national", "deputy", "area", "country", "global", "group", "regional", 
+      "senior", "sr", "lead", "chief", "principal", "associate", "assistant", "executive", "general", 
+      "head", "director", "manager", "vp", "president", "vice", "of", "services", 
+      "operations", "specialist", "expert", "department", "and", "or", "the", 
+      "in", "for", "to", "a", "an", "staff", "member", "rep", "representative", 
+      "consultant", "coordinator", "admin", "administrator", "officer", 
+      "supervisor", "controller", "analyst", "engineer", "architect", 
+      "developer", "programmer", "technician", "it", "information", "technology", 
+      "tech", "business", "corporate", "enterprise", "systems", "system", "solutions", "solution"
+    ];
+    const stopRegex = new RegExp(`\\b(${stopWords.join("|")})\\b`, "g");
+
+    for (const t of groupTitles) {
+      let s = t.title.toLowerCase();
+      // Strip all geography, level, and generic filler words
+      s = s.replace(stopRegex, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+      
+      // The true "domain" of an IT title is almost always the last 1-2 words 
+      // (e.g., "Knowledge Management", "Quality Assurance", "Network Security")
+      const words = s.split(" ");
+      const core = words.length >= 2 ? words.slice(-2).join(" ") : (s || "general");
+      
+      if (!conceptGroupsMap[core]) conceptGroupsMap[core] = [];
+      conceptGroupsMap[core].push(t);
+    }
+
+    const conceptGroups = Object.values(conceptGroupsMap);
     
-    // Fill this group's count by cycling through its titles
-    for (let j = 0; j < count; j++) {
-      slots.push(groupTitles[j % groupTitles.length]);
+    // Shuffle the order of concepts
+    for (let i = conceptGroups.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [conceptGroups[i], conceptGroups[j]] = [conceptGroups[j], conceptGroups[i]];
+    }
+
+    const groupIndices = new Array(conceptGroups.length).fill(0);
+    
+    // Fill this group's count by round-robining through concepts
+    if (conceptGroups.length > 0) {
+      for (let j = 0; j < count; j++) {
+        const gIdx = j % conceptGroups.length;
+        const group = conceptGroups[gIdx];
+        const tIdx = groupIndices[gIdx] % group.length;
+        slots.push(group[tIdx]);
+        groupIndices[gIdx]++;
+      }
     }
   });
 
