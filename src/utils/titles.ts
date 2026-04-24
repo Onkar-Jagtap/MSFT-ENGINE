@@ -104,36 +104,31 @@ function matchToAllowed(
 ): string {
   if (!allowedFunctions || allowedFunctions.length === 0) return detected;
   
-  const match = allowedFunctions.find(
-    f => f.trim().toLowerCase() === detected.toLowerCase()
-  );
-  
-  if (match) return match; // return exact casing from header sheet
-  
-  // Try partial match safely
-  const detectedLower = detected.toLowerCase();
-  const partial = allowedFunctions.find(f => {
-    const fl = f.trim().toLowerCase();
-    if (fl === "it" && detectedLower === "information technology") return true;
-    if (detectedLower === "it" && fl === "information technology") return true;
-    if (fl === "hr" && detectedLower === "human resources") return true;
-    if (detectedLower === "hr" && fl === "human resources") return true;
+  const findMatch = (val: string) => {
+    const lowerVal = val.toLowerCase();
     
-    // Avoid false positives like "security".includes("it")
-    // Only do includes if length > 3 to be safe
-    if (fl.length > 3 && detectedLower.includes(fl)) return true;
-    if (detectedLower.length > 3 && fl.includes(detectedLower)) return true;
+    // 1. Exact
+    const exact = allowedFunctions.find(f => f.trim().toLowerCase() === lowerVal);
+    if (exact) return exact;
     
-    return false;
-  });
+    // 2. Partial/Special
+    return allowedFunctions.find(f => {
+      const fl = f.trim().toLowerCase();
+      if (fl === "it" && lowerVal === "information technology") return true;
+      if (lowerVal === "it" && fl === "information technology") return true;
+      if (fl === "hr" && lowerVal === "human resources") return true;
+      if (lowerVal === "hr" && fl === "human resources") return true;
+      if (fl.length > 3 && lowerVal.includes(fl)) return true;
+      if (lowerVal.length > 3 && fl.includes(lowerVal)) return true;
+      return false;
+    });
+  };
+
+  const primaryMatch = findMatch(detected);
+  if (primaryMatch) return primaryMatch;
   
-  if (partial) return partial;
-  
-  // Not available in allowed list — use fallback
   if (fallback) {
-    const fallbackMatch = allowedFunctions.find(
-      f => f.trim().toLowerCase() === fallback.toLowerCase()
-    );
+    const fallbackMatch = findMatch(fallback);
     if (fallbackMatch) return fallbackMatch;
   }
   
@@ -148,26 +143,35 @@ export function detectFunctionFromTitle(
   const t = title.toLowerCase();
 
   // Priority checks first — these override the general department
-  if (/security|\brisk\b|cyber/.test(t))          return matchToAllowed("Security", allowedFunctions, fallback);
-  if (/\bdata\b/.test(t))                                   return matchToAllowed("Data", allowedFunctions, fallback);
-  if (/\bcompliance\b|\blegal\b|\bcounsel\b/.test(t))       return matchToAllowed("Legal", allowedFunctions, fallback);
-  if (/\bprocurement\b|\bpurchas|\bsourc/.test(t))      return matchToAllowed("Procurement", allowedFunctions, fallback);
+  if (/security|\brisk\b|cyber|compliance|legal|counsel/.test(t)) {
+    if (/security|\brisk\b|cyber/.test(t)) return matchToAllowed("Security", allowedFunctions, fallback);
+    return matchToAllowed("Legal", allowedFunctions, fallback);
+  }
+  
+  if (/\bdata\b|\banalytics\b|\bstats\b|\binsight\b/.test(t)) return matchToAllowed("Data", allowedFunctions, fallback);
+  if (/\bprocurement\b|\bpurchas|\bsourc|\bsupply\b/.test(t)) return matchToAllowed("Procurement", allowedFunctions, fallback);
 
   // General department checks
-  if (/\binformation tech|\bit\b|\bsystems\b|\binfrastructure\b|\bnetwork\b|\bcloud\b|\btech\b|\btechnology\b|\bsoftware\b|\bdevops\b/.test(t))
-                                                             return matchToAllowed("Information Technology", allowedFunctions, fallback);
-  if (/\bsales\b|\brevenue\b|\bbusiness develop/.test(t)) return matchToAllowed("Sales", allowedFunctions, fallback);
-  if (/\bfinance\b|\bfinancial\b|\baccounting\b|\btreasury\b|\bcontroller\b|\baccount\b/.test(t))
-                                                             return matchToAllowed("Finance", allowedFunctions, fallback);
-  if (/\bmarketing\b|\bbrand\b|\bdemand\b|\bgrowth\b|\bcampaign\b|\bcontent\b/.test(t))
-                                                             return matchToAllowed("Marketing", allowedFunctions, fallback);
-  if (/\bhr\b|\bhuman resource|\bpeople\b|\btalent\b|\bworkforce\b|\brecruit/.test(t))
-                                                             return matchToAllowed("Human Resources", allowedFunctions, fallback);
-  if (/\boperat|\bsupply chain\b|\blogistic|\bproduction\b/.test(t))
-                                                             return matchToAllowed("Operations", allowedFunctions, fallback);
-  if (/\bengineer/.test(t))
-                                                             return matchToAllowed("Engineering", allowedFunctions, fallback);
-  if (/\bproduct\b/.test(t))                                return matchToAllowed("Product", allowedFunctions, fallback);
+  if (/\binformation tech|\bit\b|systems|infrastructure|network|cloud|tech|technology|software|devops|digital|computer|knowledge\s*management/.test(t))
+    return matchToAllowed("Information Technology", allowedFunctions, fallback);
+    
+  if (/\bsales\b|\brevenue\b|business\s*develop|account\s*exec|account\s*mgr|sales\s*eng/.test(t)) 
+    return matchToAllowed("Sales", allowedFunctions, fallback);
+    
+  if (/finance|financial|accounting|treasury|controller|account|audit|fiscal/.test(t))
+    return matchToAllowed("Finance", allowedFunctions, fallback);
+    
+  if (/marketing|brand|demand|growth|campaign|content|advertising|creative/.test(t))
+    return matchToAllowed("Marketing", allowedFunctions, fallback);
+    
+  if (/\bhr\b|human\s*resource|people|talent|workforce|recruit|culture/.test(t))
+    return matchToAllowed("Human Resources", allowedFunctions, fallback);
+    
+  if (/operat|supply\s*chain|logistic|production|facility|maintenance/.test(t))
+    return matchToAllowed("Operations", allowedFunctions, fallback);
+    
+  if (/\bengineer/.test(t)) return matchToAllowed("Engineering", allowedFunctions, fallback);
+  if (/\bproduct\b|\bmerchandis/.test(t)) return matchToAllowed("Product", allowedFunctions, fallback);
 
   // Nothing matched — return fallback
   return matchToAllowed(fallback, allowedFunctions, fallback);

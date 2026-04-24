@@ -206,15 +206,16 @@ export default function App() {
         
         const mapFnToKey = (fn: string) => {
           const t = fn.toLowerCase();
-          if (t.includes("it") || t.includes("information technology") || t.includes("information tech")) return "Information Technology";
-          if (t.includes("hr") || t.includes("human resources") || t.includes("human resource")) return "Human Resources";
-          if (t.includes("finance") || t.includes("financial") || t.includes("account")) return "Finance";
-          if (t.includes("sales")) return "Sales";
-          if (t.includes("marketing")) return "Marketing";
-          if (t.includes("operations") || t.includes("ops")) return "Operations";
-          if (t.includes("security") || t.includes("cyber")) return "Security";
+          if (t.includes("it") || t.includes("information technology") || t.includes("information tech") || t.includes("systems") || t.includes("tech")) return "Information Technology";
+          if (t.includes("hr") || t.includes("human resources") || t.includes("human resource") || t.includes("people") || t.includes("talent")) return "Human Resources";
+          if (t.includes("finance") || t.includes("financial") || t.includes("account") || t.includes("treasury") || t.includes("audit")) return "Finance";
+          if (t.includes("sales") || t.includes("revenue") || t.includes("business dev")) return "Sales";
+          if (t.includes("marketing") || t.includes("brand") || t.includes("demand")) return "Marketing";
+          if (t.includes("operations") || t.includes("ops") || t.includes("supply chain") || t.includes("logistics")) return "Operations";
+          if (t.includes("security") || t.includes("cyber") || t.includes("compliance")) return "Security";
           if (t.includes("engineering") || t.includes("engineer")) return "Engineering";
-          if (t.includes("general management") || t.includes("management")) return "General Management";
+          if (t.includes("product") || t.includes("merchandise")) return "Product";
+          if (t.includes("general management") || t.includes("management") || t.includes("leadership")) return "General Management";
           return fn; // fallback
         };
 
@@ -301,6 +302,7 @@ export default function App() {
           if (k.includes("customquestion4")) specCustomQ4 = val;
           if (k.includes("customquestion5")) specCustomQ5 = val;
           if (k.includes("customquestion6")) specCustomQ6 = val;
+          if (k.includes("customquestion7")) specCustomQ7 = val;
         }
 
         const lvl = String(row["job_level"] || "").trim();
@@ -329,6 +331,7 @@ export default function App() {
           if (col0.includes("customquestion4")) specCustomQ4 = col1;
           if (col0.includes("customquestion5")) specCustomQ5 = col1;
           if (col0.includes("customquestion6")) specCustomQ6 = col1;
+          if (col0.includes("customquestion7")) specCustomQ7 = col1;
         }
       }
       if (levels.size > 0) { allowedLevels = [...levels]; addLog("success", `✓ job_level: ${allowedLevels.join(", ")}`); }
@@ -361,6 +364,9 @@ export default function App() {
     const stateCol = keys.find(k => /state|province|region/i.test(k)) || "state";
     const postalCol = keys.find(k => /postal|zip|postcode/i.test(k)) || "postal_code";
     const countryCol = keys.find(k => /country|nation|location/i.test(k)) || "country";
+    const leadTitleCol = keys.find(k => /jobtitle|title|designation/i.test(k));
+    const leadFnCol = keys.find(k => /jobfunction|function|department|dept/i.test(k));
+    const leadLvlCol = keys.find(k => /joblevel|level|seniority/i.test(k));
 
     const resolveCompany = buildCompanyDedup(rawData, companyCol);
     let nameFixed = 0, phoneFixed = 0;
@@ -381,7 +387,15 @@ export default function App() {
         if (n && n !== _phone) phoneFixed++;
         _phone = n || _phone;
       }
-      return { ...r, _email, _firstName, _lastName, _phone, _industry: mapIndustry(r[industryCol]), _company_size: mapEmployeeSize(r[sizeCol]), [FALLBACK_FLAGS]: new Set<string>() };
+      return { 
+        ...r, _email, _firstName, _lastName, _phone, 
+        _industry: mapIndustry(r[industryCol]), 
+        _company_size: mapEmployeeSize(r[sizeCol]),
+        _orig_title: leadTitleCol ? String(r[leadTitleCol] || "").trim() : "",
+        _orig_fn: leadFnCol ? String(r[leadFnCol] || "").trim() : "",
+        _orig_lvl: leadLvlCol ? String(r[leadLvlCol] || "").trim() : "",
+        [FALLBACK_FLAGS]: new Set<string>() 
+      };
     });
     
     addLog("success", `✓ ${rows.length} rows cleaned | ${nameFixed} names | ${phoneFixed} phones`);
@@ -400,7 +414,12 @@ export default function App() {
     const getNextTitle = buildTitleAssigner(specTitles, allowedLevels, allowedFunctions, rows.length, criteriaLevelMap, criteriaPool);
     rows = await processInChunks(rows, 500, r => {
       const t = getNextTitle();
-      return { ...r, _job_title: t.title, _job_level: t.level, _job_function: t.fn };
+      return { 
+        ...r, 
+        _job_title: t.title, 
+        _job_level: t.level, 
+        _job_function: t.fn || r._orig_fn || "" 
+      };
     });
     addLog("success", `✓ All ${rows.length} rows assigned titles`);
     setStep(4, "done"); setProgress(56);
@@ -460,11 +479,11 @@ export default function App() {
       const job_level = matchStrictHeader(baseLevel, allowedLevels, "Director");
       
       const job_function = (!allowedFunctions || allowedFunctions.length === 0) 
-        ? (r._job_function || "") 
-        : detectFunctionFromTitle(job_title, allowedFunctions, r._job_function || allowedFunctions[0]);
+        ? (r._job_function || r._orig_fn || "") 
+        : detectFunctionFromTitle(job_title, allowedFunctions, r._job_function || r._orig_fn || allowedFunctions[0]);
 
-      if (!r._job_level) yellowCells.push({ rowIdx: idx + 1, col: "job_level" });
-      if (!r._job_function) yellowCells.push({ rowIdx: idx + 1, col: "job_function" });
+      if (!r._job_level && !r._orig_lvl) yellowCells.push({ rowIdx: idx + 1, col: "job_level" });
+      if (!r._job_function && !r._orig_fn) yellowCells.push({ rowIdx: idx + 1, col: "job_function" });
       
       let city = toTitleCase(cleanText(r[cityCol] || ""));
       const isExceptionCountry = countryLower.includes("united states") || countryLower === "us" || countryLower === "usa" || countryLower.includes("canada") || countryLower.includes("india") || countryLower.includes("australia");
@@ -520,7 +539,7 @@ export default function App() {
         custom_question_4: specCustomQ4 || "",
         custom_question_5: specCustomQ5 || "",
         custom_question_6: specCustomQ6 || "",
-        custom_question_7: "",
+        custom_question_7: specCustomQ7 || "",
         linkedinprofileurl: String(r["linkedinprofileurl"] || "").trim()
       };
     });
